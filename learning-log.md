@@ -36,3 +36,11 @@ Each entry:
 - **Solution**: Kept `setHeadingsInView` using cached headings (fast scroll path), but restored `retrieveHeadings()` calls in `handleComponentUpdate` (layout changes: edit/preview switch, pane resize) and `handleResolve` (content changes: headings added/removed). The invariant: scroll = fast (cached), layout-change/content-change = recompute.
 - **Files**: `src/plugin.ts`
 - **Key insight**: Before removing an expensive call, trace ALL callers and understand which events trigger them. "Expensive on scroll" doesn't mean "remove everywhere" — it means "remove from the scroll path only".
+
+### 2026-07-14 — CodeMirror 6 virtualizes content — offsets shift during scroll
+
+- **Problem**: After caching headings to prevent flicker, the sticky header stopped updating during scroll. It showed ALL headings stacked in rows instead of just the current one. Root cause: heading offsets (pixel positions) computed at initialization were stale by the time the user scrolled.
+- **Why**: CodeMirror 6 virtualizes off-screen content. `cm.lineBlockAt()` returns different positions as you scroll because content is lazily rendered. Preview mode has similar behavior with section heights. Offsets computed once at init are wrong during scroll.
+- **Solution**: Recompute **offsets** on every scroll tick (synchronous — `getHeadings()` from metadata cache + `getShownHeadings()` via `cm.lineBlockAt` or section iteration), but reuse **cached titles** (the expensive async `parseMarkdown()` part) via a `Map<string, string>` for O(1) lookup. This keeps scroll fast (no async, no DOM element creation) while having correct offsets.
+- **Files**: `src/plugin.ts` (`setHeadingsInView`)
+- **Key insight**: In CodeMirror 6, you cannot cache line positions across scroll events. The positions are only valid for the current viewport state. Cache the expensive parts (rendered markdown titles), not the volatile parts (pixel offsets).
