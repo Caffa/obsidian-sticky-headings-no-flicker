@@ -2,8 +2,27 @@ import StickyHeader from './ui/StickyHeader.svelte';
 import type { MarkdownView } from 'obsidian';
 import type { Heading, ISetting } from './types';
 
+function headingsEqual(a: Heading[], b: Heading[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (
+      a[i].index !== b[i].index ||
+      a[i].level !== b[i].level ||
+      a[i].indentLevel !== b[i].indentLevel ||
+      a[i].title !== b[i].title
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export default class StickyHeaderComponent {
   stickyHeaderComponents!: [StickyHeader, StickyHeader];
+  private lastHeadings: Heading[] = [];
+  private lastGetExpectedHeadings: ((index: number) => Heading[]) | null = null;
+  private lastShowFileName: boolean | undefined;
+  private lastView: MarkdownView | null = null;
 
   constructor(view: MarkdownView, settings: ISetting) {
     this.addStickyHeader(view, settings);
@@ -50,6 +69,18 @@ export default class StickyHeaderComponent {
     showFileName: boolean,
     view: MarkdownView
   ) {
+    if (
+      headingsEqual(headings, this.lastHeadings) &&
+      getExpectedHeadings === this.lastGetExpectedHeadings &&
+      showFileName === this.lastShowFileName &&
+      view === this.lastView
+    ) {
+      return;
+    }
+    this.lastHeadings = headings;
+    this.lastGetExpectedHeadings = getExpectedHeadings;
+    this.lastShowFileName = showFileName;
+    this.lastView = view;
     this.stickyHeaderComponents.forEach(conponent =>
       conponent.$set({ headings, getExpectedHeadings, showFileName, view })
     );
