@@ -237,7 +237,25 @@ export default class StickyHeadingsPlugin extends Plugin {
     const { scrollTop } = scroller;
     const stuckHeaderHeight = getContainerEl(scroller)?.clientHeight || 0;
     if (item) {
-      const { headings } = item;
+      // Recompute offsets (synchronous, fast) but reuse cached titles (expensive part)
+      const rawHeadings = getHeadings(item.file, this.app);
+      if (!rawHeadings || rawHeadings.length === 0) {
+        this.statusBarItemEl?.hide();
+        return;
+      }
+      const freshHeadings = getShownHeadings(rawHeadings, item.view, this.settings);
+      // Build a title cache map for O(1) lookup
+      const titleMap = new Map<string, string>();
+      for (const h of item.headings) {
+        titleMap.set(h.heading, h.title);
+      }
+      const headings = freshHeadings.map(h => ({
+        ...h,
+        title: titleMap.get(h.heading) || h.title,
+      }));
+      // Update cache with fresh offsets + preserved titles
+      item.headings = headings;
+
       const headingsInView = headings.filter(heading => heading.offset < scrollTop + stuckHeaderHeight);
       let findalHeadings: Heading[] = [];
       trivial(headingsInView, findalHeadings, this.settings.mode);
