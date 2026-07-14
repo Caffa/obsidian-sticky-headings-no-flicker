@@ -141,9 +141,7 @@ export default class StickyHeadingsPlugin extends Plugin {
               subtree: true,
               childList: true,
             });
-            item.headingEl.predictHeadingsHeight(
-              makeExpectedHeadings(item.headings, this.settings.max, this.settings.mode)(index)
-            );
+            item.headingEl.predictHeadingsHeight(item.getExpectedHeadings(index));
           });
         }
       }
@@ -160,12 +158,14 @@ export default class StickyHeadingsPlugin extends Plugin {
         if (!this.fileResolveMap.has(id)) {
           const headingEl = new StickyHeaderComponent(view, this.settings);
           const layoutChangeEvent = this.app.workspace.on('layout-change', this.handleComponentUpdate.bind(this, view));
+          const getExpected = makeExpectedHeadings(headings, this.settings.max, this.settings.mode);
           this.fileResolveMap.set(id, {
             resolve: true,
             file,
             container: view.contentEl,
             view,
             headings,
+            getExpectedHeadings: getExpected,
             headingEl,
             layoutChangeEvent,
             editMode: isEditSourceMode(view),
@@ -177,6 +177,7 @@ export default class StickyHeadingsPlugin extends Plugin {
           if (item) {
             item.editMode = isEditSourceMode(view);
             item.headings = headings;
+            item.getExpectedHeadings = makeExpectedHeadings(headings, this.settings.max, this.settings.mode);
             item.file = file;
           }
         }
@@ -244,7 +245,7 @@ export default class StickyHeadingsPlugin extends Plugin {
           ...heading,
           indentLevel: indentList[i] || 0,
         })),
-        makeExpectedHeadings(headings, this.settings.max, this.settings.mode),
+        item.getExpectedHeadings,
         this.settings.autoShowFileName && needShowFileName(item.file, this.app),
         item.view
       );
@@ -331,6 +332,7 @@ export default class StickyHeadingsPlugin extends Plugin {
       if (item.headingEl) {
         item.headingEl.updateSettings(this.settings);
       }
+      item.getExpectedHeadings = makeExpectedHeadings(item.headings, this.settings.max, this.settings.mode);
     });
     if (this.statusBarEl) {
       if (this.settings.showInStatusBar) {

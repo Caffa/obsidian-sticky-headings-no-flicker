@@ -18,6 +18,7 @@ export interface FileResolveEntry {
   view: MarkdownView;
   container: HTMLElement;
   headings: Heading[];
+  getExpectedHeadings: (index: number) => Heading[];
   headingEl: StickyHeaderComponent;
   layoutChangeEvent: EventRef;
   scrollListener?: ((event: Event) => void) | null;
