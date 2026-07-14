@@ -24,3 +24,6 @@ data.json
 dist
 
 .eslintcache
+
+# Deploy folder created by sendToNovelVault.sh
+obsidian-sticky-headings-no-flicker/
