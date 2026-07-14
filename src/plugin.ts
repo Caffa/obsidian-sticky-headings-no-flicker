@@ -157,6 +157,7 @@ export default class StickyHeadingsPlugin extends Plugin {
         const headings = await this.retrieveHeadings(file, view);
         if (!this.fileResolveMap.has(id)) {
           const headingEl = new StickyHeaderComponent(view, this.settings);
+          // eslint-disable-next-line @typescript-eslint/no-misused-promises
           const layoutChangeEvent = this.app.workspace.on('layout-change', this.handleComponentUpdate.bind(this, view));
           const getExpected = makeExpectedHeadings(headings, this.settings.max, this.settings.mode);
           this.fileResolveMap.set(id, {
@@ -181,7 +182,7 @@ export default class StickyHeadingsPlugin extends Plugin {
             item.file = file;
           }
         }
-        this.handleComponentUpdate(view);
+        await this.handleComponentUpdate(view);
       }
     }
   }
@@ -192,12 +193,17 @@ export default class StickyHeadingsPlugin extends Plugin {
     return item.headings;
   }
 
-  handleComponentUpdate(view: MarkdownView) {
+  async handleComponentUpdate(view: MarkdownView) {
     const scroller = getScroller(view);
     const { id } = view.leaf;
     if (id) {
       const item = this.fileResolveMap.get(id);
       if (item) {
+        // Refresh headings — layout changed, so offsets need recomputing
+        const headings = await this.retrieveHeadings(item.file, view);
+        item.headings = headings;
+        item.getExpectedHeadings = makeExpectedHeadings(headings, this.settings.max, this.settings.mode);
+
         // Remove existing scroll listener if it exists
         if (item.scrollListener && item.view.contentEl) {
           item.view.contentEl.removeEventListener('scroll', item.scrollListener, true);
@@ -265,11 +271,15 @@ export default class StickyHeadingsPlugin extends Plugin {
     }
   }
 
-  handleResolve(file: TFile) {
+  async handleResolve(file: TFile) {
     if (isMarkdownFile(file)) {
       const ids: string[] = [];
       for (const [id, item] of this.fileResolveMap) {
         if (item.file.path === file.path) {
+          // Refresh headings — file content changed
+          const headings = await this.retrieveHeadings(file, item.view);
+          item.headings = headings;
+          item.getExpectedHeadings = makeExpectedHeadings(headings, this.settings.max, this.settings.mode);
           this.updateHeadings(file, item.view, item);
           if (!item.resolve) {
             item.resolve = true;
