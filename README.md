@@ -1,4 +1,8 @@
-# Obsidian Sticky Headings
+# Obsidian Sticky Headings (No Flicker)
+
+> [!IMPORTANT]
+>
+> This is a community-maintained fork of [Zhou Hua's](https://github.com/zhouhua) excellent [Sticky Headings](https://github.com/zhouhua/obsidian-sticky-headings) plugin. The primary goal is to fix the flickering issue and keep the codebase stable. No major feature changes are planned beyond ensuring a smooth, reliable experience.
 
 ![GitHub Release](https://img.shields.io/github/v/release/zhouhua/obsidian-sticky-headings?include_prereleases&style=flat) ![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/zhouhua/obsidian-sticky-headings/total?style=flat)
 
@@ -17,9 +21,11 @@ The Sticky Headings plugin for Obsidian enhances your writing and reading experi
 
 ## Installation
 
-1. Install the `Another Sticky Headings` plugin via the Obsidian Community Plugins marketplace.
+1. Install the `Sticky Headings (No Flicker)` plugin via the Obsidian Community Plugins marketplace.
 2. Enable the plugin via the Obsidian Settings under the "Community Plugins" section.
 3. Configure the plugin parameters as needed through the settings UI.
+
+> Alternatively, you can install the original `Another Sticky Headings` by Zhou Hua if you prefer the mainline version.
 
 ## Features
 
@@ -54,29 +60,10 @@ Here are some custom styles from the community. Thanks for the creative ideas an
 * [Colorful and floating right](https://gist.github.com/Aiuanyu/8539a8425435406ea79cbc64eaea6082)
 * ...
 
-## My Other Obsidian Plugins
-
-* [Export Image](https://github.com/zhouhua/obsidian-export-image)
-* [Markdown Media Card](https://github.com/zhouhua/obsidian-markdown-media-card)
-* [vConsole](https://github.com/zhouhua/obsidian-vconsole)
-* [POWER MODE](https://github.com/zhouhua/obsidian-power-mode)
-* [PopKit](https://github.com/zhouhua/obsidian-popkit)
-
 ## Change Log
 
-### [2.1.3](https://github.com/zhouhua/obsidian-sticky-headings/releases/tag/2.1.3)
+### 2.1.4 (No Flicker fork)
 
-* Fix [#40](https://github.com/zhouhua/obsidian-sticky-headings/issues/40).
-
-### [2.1.2](https://github.com/zhouhua/obsidian-sticky-headings/releases/tag/2.1.2)
-
-* Support for adjusting how far from the top boundary a heading needs to be to trigger the sticky effect.
-
-### [2.1.1](https://github.com/zhouhua/obsidian-sticky-headings/releases/tag/2.1.1)
-
-* To support displaying only the status bar mode (the simplest UI), the sticky headings can be set to disable in order to hide it.
-
-### [2.1.0](https://github.com/zhouhua/obsidian-sticky-headings/releases/tag/2.1.0)
-
-* ✨ Added status bar mode support
-* 🎨 Improved heading rendering with HTML format support (such as LaTeX equations, bold text)
+* Forked from Zhou Hua's original project.
+* Original author: Zhou Hua. This fork maintained by Pamela.
+* No major feature changes — this fork focuses on fixing the flickering issue and maintaining a stable, reliable experience.
