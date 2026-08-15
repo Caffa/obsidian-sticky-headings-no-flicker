@@ -39,6 +39,7 @@
 
   const scrollTo = async (top: number) => {
     const scrollerSource = getScroller(view);
+    if (!scrollerSource) return;
     // When jumping, the currently clicked title should not appear in props.headings. This is different from the manual scrolling scenario and needs to be corrected.
     if (settings.scrollBehaviour === 'instant') {
       forceRenderingHeadings = [...expectedHeadings];

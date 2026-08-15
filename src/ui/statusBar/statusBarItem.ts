@@ -21,19 +21,23 @@ export default class StickyHeaderComponent {
   }
 
   removeStickyHeader() {
-    this.statusBarItemComponent.$destroy();
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    this.statusBarItemComponent?.$destroy?.();
   }
 
   switchFile(file: TFile, heading: Heading, view: MarkdownView) {
-    this.statusBarItemComponent.$set({ file, heading, view });
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    this.statusBarItemComponent?.$set?.({ file, heading, view });
   }
 
   updateHeading(heading?: Heading) {
-    this.statusBarItemComponent.$set({ heading });
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    this.statusBarItemComponent?.$set?.({ heading });
   }
 
   hide() {
-    this.statusBarItemComponent.$set({
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    this.statusBarItemComponent?.$set?.({
       file: undefined,
     });
   }

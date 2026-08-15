@@ -12,8 +12,20 @@ export function getHeadingsWithOffsetPreview(
   const headingsOffset: number[] = [];
   const boundaryOffset = getBoundaryOffset(view, settings);
   let heightSum = 0;
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  const sections = view?.previewMode?.renderer?.sections;
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  if (!sections) {
+    return headings.map<Heading>((heading, index) => ({
+      ...heading,
+      offset: -boundaryOffset,
+      indentLevel: heading.level - 1,
+      title: heading.heading,
+      index,
+    }));
+  }
   // @ts-expect-error height not defined in obsidian typing
-  view.previewMode.renderer.sections.forEach(({ html, height = 0 }) => {
+  sections.forEach(({ html, height = 0 }) => {
     if (isHeadingRegex.test(html)) {
       headingsOffset.push(heightSum);
     }
@@ -33,20 +45,36 @@ export function getHeadingsWithOffsetSource(
   view: MarkdownView,
   settings: ISetting
 ): Heading[] {
-  const result = headings.map<Heading>((heading, i) => {
-    const { position } = heading;
-    const offset = view.editMode.containerEl.querySelector<HTMLElement>('.cm-contentContainer')?.offsetTop || 0;
-    const boundaryOffset = getBoundaryOffset(view, settings);
-    const { top = 0 } = view.editor.cm.lineBlockAt(position.start.offset);
-    return {
+  try {
+    const result = headings.map<Heading>((heading, i) => {
+      const { position } = heading;
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      const containerEl = view?.editMode?.containerEl?.querySelector<HTMLElement>('.cm-contentContainer');
+      const offset = containerEl?.offsetTop || 0;
+      const boundaryOffset = getBoundaryOffset(view, settings);
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      const lineBlock = view?.editor?.cm?.lineBlockAt?.(position.start.offset);
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      const { top = 0 } = lineBlock ?? { top: 0 };
+      return {
+        ...heading,
+        offset: top + offset - boundaryOffset,
+        indentLevel: heading.level - 1,
+        title: heading.heading,
+        index: i,
+      };
+    });
+    return result;
+  } catch (error) {
+    console.warn('Failed to compute source heading offsets, falling back to zero offsets:', error);
+    return headings.map<Heading>((heading, i) => ({
       ...heading,
-      offset: top + offset - boundaryOffset,
+      offset: 0,
       indentLevel: heading.level - 1,
       title: heading.heading,
       index: i,
-    };
-  });
-  return result;
+    }));
+  }
 }
 
 export function trivial(subHeadings: Heading[], result: Heading[], mode: 'default' | 'concise' | 'disable') {
@@ -72,9 +100,13 @@ export function trivial(subHeadings: Heading[], result: Heading[], mode: 'defaul
   trivial(subHeadings.slice(indexesOfTopLevel[indexesOfTopLevel.length - 1] + 1), result, mode);
 }
 export function getHeadingsWithOffset(headings: HeadingCache[], view: MarkdownView, settings: ISetting): Heading[] {
-  const getValidHeadings = isEditMode(view) ? getHeadingsWithOffsetSource : getHeadingsWithOffsetPreview;
-  const validHeadings = getValidHeadings(headings, view, settings);
-  return validHeadings;
+  try {
+    const getValidHeadings = isEditMode(view) ? getHeadingsWithOffsetSource : getHeadingsWithOffsetPreview;
+    return getValidHeadings(headings, view, settings);
+  } catch (error) {
+    console.warn('Failed to get shown headings, returning empty list:', error);
+    return [];
+  }
 }
 
 export default getHeadingsWithOffset;

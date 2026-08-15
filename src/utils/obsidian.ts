@@ -28,13 +28,22 @@ export function parseMarkdown(markdown: string, app: App): Promise<string> {
 }
 
 // used to check if we are in source mode AND NOT live preview
-export const isEditSourceMode = (view: MarkdownView) => view.editMode.sourceMode && view.currentMode.type !== 'preview';
+export const isEditSourceMode = (view: MarkdownView) =>
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  view?.editMode?.sourceMode &&
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  view?.currentMode?.type !== 'preview';
 
 // used to check if we are in source mode OR live preview
-export const isEditMode = (view: MarkdownView) => view.currentMode.type !== 'preview';
+export const isEditMode = (view: MarkdownView | null | undefined) =>
+  view?.currentMode != null && view.currentMode.type !== 'preview';
 
-export const getScroller = (view: MarkdownView) =>
-  isEditMode(view) ? view.editor.cm.scrollDOM : view.previewMode.renderer.previewEl;
+export const getScroller = (view: MarkdownView): HTMLElement | null =>
+  isEditMode(view)
+    ? // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      (view?.editor?.cm?.scrollDOM ?? null)
+    : // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      (view?.previewMode?.renderer?.previewEl ?? null);
 
 export const getContainerEl = (el: HTMLElement | Element) =>
   el.closest('.markdown-reading-view, .markdown-source-view')?.querySelector('.sticky-headings-root');
@@ -57,7 +66,9 @@ export function getBoundaryOffset(view: MarkdownView, settings: ISetting) {
   const { boundaryOffset } = settings;
   if (boundaryOffset.endsWith('%')) {
     const percentage = parseFloat(boundaryOffset);
-    return (getScroller(view).clientHeight * percentage) / 100 || 0;
+    const scroller = getScroller(view);
+    const refHeight = scroller?.clientHeight ?? 0;
+    return (refHeight * percentage) / 100 || 0;
   }
   return parseFloat(boundaryOffset) || 0;
 }

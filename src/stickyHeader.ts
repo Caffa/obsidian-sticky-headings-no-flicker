@@ -18,7 +18,7 @@ function headingsEqual(a: Heading[], b: Heading[]): boolean {
 }
 
 export default class StickyHeaderComponent {
-  stickyHeaderComponents!: [StickyHeader, StickyHeader];
+  stickyHeaderComponents!: StickyHeader[];
   private lastHeadings: Heading[] = [];
   private lastGetExpectedHeadings: ((index: number) => Heading[]) | null = null;
   private lastShowFileName: boolean | undefined;
@@ -29,38 +29,61 @@ export default class StickyHeaderComponent {
   }
 
   addStickyHeader(view: MarkdownView, settings: ISetting) {
-    const previewContentEl = view.previewMode.containerEl;
-    const sourceContentEl = view.editMode.editorEl;
-    this.stickyHeaderComponents = [
-      new StickyHeader({
-        target: previewContentEl,
-        props: {
-          headings: [],
-          editMode: false,
-          view,
-          getExpectedHeadings: () => [],
-          settings,
-          showFileName: false,
-          expectedHeadings: [],
-        },
-      }),
-      new StickyHeader({
-        target: sourceContentEl,
-        props: {
-          headings: [],
-          editMode: false,
-          view,
-          getExpectedHeadings: () => [],
-          settings,
-          showFileName: false,
-          expectedHeadings: [],
-        },
-      }),
-    ];
+    this.removeStickyHeader();
+    this.lastHeadings = [];
+    this.lastGetExpectedHeadings = null;
+    this.lastShowFileName = undefined;
+    this.lastView = null;
+
+    const components: StickyHeader[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    const previewContentEl = view?.previewMode?.containerEl;
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    const sourceContentEl = view?.editMode?.editorEl;
+
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (previewContentEl) {
+      components.push(
+        new StickyHeader({
+          target: previewContentEl,
+          props: {
+            headings: [],
+            editMode: false,
+            view,
+            getExpectedHeadings: () => [],
+            settings,
+            showFileName: false,
+            expectedHeadings: [],
+          },
+        })
+      );
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (sourceContentEl) {
+      components.push(
+        new StickyHeader({
+          target: sourceContentEl,
+          props: {
+            headings: [],
+            editMode: false,
+            view,
+            getExpectedHeadings: () => [],
+            settings,
+            showFileName: false,
+            expectedHeadings: [],
+          },
+        })
+      );
+    }
+
+    this.stickyHeaderComponents = components;
   }
 
   removeStickyHeader() {
-    this.stickyHeaderComponents.forEach(conponent => conponent.$destroy());
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    this.stickyHeaderComponents?.forEach(conponent => conponent?.$destroy?.());
+    this.stickyHeaderComponents = [];
   }
 
   updateHeadings(
@@ -69,6 +92,8 @@ export default class StickyHeaderComponent {
     showFileName: boolean,
     view: MarkdownView
   ) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (!this.stickyHeaderComponents?.length) return;
     if (
       headingsEqual(headings, this.lastHeadings) &&
       getExpectedHeadings === this.lastGetExpectedHeadings &&
@@ -87,14 +112,17 @@ export default class StickyHeaderComponent {
   }
 
   predictHeadingsHeight(headings: Heading[]) {
-    this.stickyHeaderComponents.forEach(component => component.$set({ expectedHeadings: headings }));
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    this.stickyHeaderComponents?.forEach(component => component.$set({ expectedHeadings: headings }));
   }
 
   updateEditMode(editMode: boolean) {
-    this.stickyHeaderComponents.forEach(conponent => conponent.$set({ editMode }));
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    this.stickyHeaderComponents?.forEach(conponent => conponent.$set({ editMode }));
   }
 
   updateSettings(settings: ISetting) {
-    this.stickyHeaderComponents.forEach(conponent => conponent.$set({ settings }));
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    this.stickyHeaderComponents?.forEach(conponent => conponent.$set({ settings }));
   }
 }
