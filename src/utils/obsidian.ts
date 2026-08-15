@@ -38,12 +38,15 @@ export const isEditSourceMode = (view: MarkdownView) =>
 export const isEditMode = (view: MarkdownView | null | undefined) =>
   view?.currentMode != null && view.currentMode.type !== 'preview';
 
-export const getScroller = (view: MarkdownView): HTMLElement | null =>
-  isEditMode(view)
-    ? // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      (view?.editor?.cm?.scrollDOM ?? null)
-    : // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      (view?.previewMode?.renderer?.previewEl ?? null);
+export const getScroller = (view: MarkdownView): HTMLElement | null => {
+  if (isEditMode(view)) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    return view?.editor?.cm?.scrollDOM ?? null;
+  }
+  // preview / reading mode — prefer public containerEl, fall back to internal previewEl
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  return view?.previewMode?.containerEl ?? view?.previewMode?.renderer?.previewEl ?? null;
+};
 
 export const getContainerEl = (el: HTMLElement | Element) =>
   el.closest('.markdown-reading-view, .markdown-source-view')?.querySelector('.sticky-headings-root');

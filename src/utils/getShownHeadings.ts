@@ -18,7 +18,7 @@ export function getHeadingsWithOffsetPreview(
   if (!sections) {
     return headings.map<Heading>((heading, index) => ({
       ...heading,
-      offset: -boundaryOffset,
+      offset: index * 32 - boundaryOffset,
       indentLevel: heading.level - 1,
       title: heading.heading,
       index,

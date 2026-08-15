@@ -225,7 +225,9 @@ export default class StickyHeadingsPlugin extends Plugin {
     if (scroller) {
       this.setHeadingsInView(scroller, item);
     } else {
-      this.statusBarItemEl?.hide();
+      // On mobile the internal previewEl may be missing; still render headings
+      // using the view content container as a fallback reference.
+      this.setHeadingsInView(item.view.contentEl, item);
     }
     return item.headings;
   }
@@ -314,7 +316,9 @@ export default class StickyHeadingsPlugin extends Plugin {
 
         const headingsInView = headings.filter(heading => heading.offset < scrollTop + stuckHeaderHeight);
         let findalHeadings: Heading[] = [];
-        trivial(headingsInView, findalHeadings, this.settings.mode);
+        // If no heading is "in view" yet we're at the very top, show the first one.
+        const effectiveHeadingsInView = headingsInView.length || scrollTop > 0 ? headingsInView : headings.slice(0, 1);
+        trivial(effectiveHeadingsInView, findalHeadings, this.settings.mode);
         if (this.settings.max) {
           findalHeadings = findalHeadings.slice(-this.settings.max);
         }
