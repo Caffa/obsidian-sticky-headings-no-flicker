@@ -26,6 +26,7 @@ export interface FileResolveEntry {
   detectPosition?: ((event: Event, scroller: HTMLElement) => void) | null;
   editMode: boolean;
   currentIndex: number;
+  resolveRevision: number;
 }
 
 export interface Heading extends HeadingCache {

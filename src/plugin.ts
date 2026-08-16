@@ -194,7 +194,7 @@ export default class StickyHeadingsPlugin extends Plugin {
           const headingEl = new StickyHeaderComponent(view, this.settings);
           // eslint-disable-next-line @typescript-eslint/no-misused-promises
           const layoutChangeEvent = this.app.workspace.on('layout-change', this.handleComponentUpdate.bind(this, view));
-          const getExpected = makeExpectedHeadings(headings, this.settings.max, this.settings.mode);
+          const getExpected = makeExpectedHeadings(() => headings, this.settings.max, this.settings.mode);
           this.fileResolveMap.set(id, {
             resolve: true,
             file,
@@ -206,6 +206,7 @@ export default class StickyHeadingsPlugin extends Plugin {
             layoutChangeEvent,
             editMode: isEditSourceMode(view),
             currentIndex: -1,
+            resolveRevision: 0,
           });
           this.registerEvent(layoutChangeEvent);
         } else {
@@ -213,7 +214,7 @@ export default class StickyHeadingsPlugin extends Plugin {
           if (item) {
             item.editMode = isEditSourceMode(view);
             item.headings = headings;
-            item.getExpectedHeadings = makeExpectedHeadings(headings, this.settings.max, this.settings.mode);
+            item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, this.settings.max, this.settings.mode);
             item.file = file;
           }
         }
@@ -245,7 +246,7 @@ export default class StickyHeadingsPlugin extends Plugin {
       // Refresh headings — layout changed, so offsets need recomputing
       const headings = await this.retrieveHeadings(item.file, view);
       item.headings = headings;
-      item.getExpectedHeadings = makeExpectedHeadings(headings, this.settings.max, this.settings.mode);
+      item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, this.settings.max, this.settings.mode);
 
       // Remove existing scroll listener from the element it was actually attached to
       if (item.scrollListener && item.scrollListenerTarget) {
@@ -369,9 +370,13 @@ export default class StickyHeadingsPlugin extends Plugin {
       for (const [id, item] of this.fileResolveMap) {
         if (item.file.path === file.path) {
           // Refresh headings — file content changed
+          const myRev = ++item.resolveRevision;
           const headings = await this.retrieveHeadings(file, item.view);
+          if (myRev !== item.resolveRevision) {
+            return;
+          }
           item.headings = headings;
-          item.getExpectedHeadings = makeExpectedHeadings(headings, this.settings.max, this.settings.mode);
+          item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, this.settings.max, this.settings.mode);
           this.updateHeadings(file, item.view, item);
           if (!item.resolve) {
             item.resolve = true;
@@ -458,7 +463,7 @@ export default class StickyHeadingsPlugin extends Plugin {
       if (item.headingEl) {
         item.headingEl.updateSettings(this.settings);
       }
-      item.getExpectedHeadings = makeExpectedHeadings(item.headings, this.settings.max, this.settings.mode);
+      item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, this.settings.max, this.settings.mode);
     });
     if (this.statusBarEl) {
       if (this.settings.showInStatusBar) {

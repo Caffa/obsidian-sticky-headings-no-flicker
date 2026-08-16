@@ -2,7 +2,7 @@ import type { Heading } from 'src/types';
 import { trivial } from './getShownHeadings';
 
 export function makeExpectedHeadings(
-  headings: Heading[],
+  getHeadings: () => Heading[],
   max: number,
   mode: 'default' | 'concise' | 'disable'
 ): (index: number) => Heading[] {
@@ -10,7 +10,7 @@ export function makeExpectedHeadings(
     if (mode === 'disable') {
       return [];
     }
-    const subHeadings = headings.slice(0, index);
+    const subHeadings = getHeadings().slice(0, index);
     const result: Heading[] = [];
     trivial(subHeadings, result, mode);
     if (max) {

@@ -3,7 +3,7 @@
 <script lang="ts">
   import { getIcon, MarkdownView } from 'obsidian';
   import type { Heading, ISetting } from '../types';
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import { getScroller } from 'src/utils/obsidian';
   import { delay } from '../utils/delay';
   import { animateScroll } from 'src/utils/scroll';
@@ -17,6 +17,7 @@
   let main: HTMLElement;
   let shadow: HTMLElement;
   let forceRenderingHeadings: Heading[] | null = null;
+  let activeScrollCancel: (() => void) | null = null;
 
   const filename = view.getFile()?.basename;
   export const showIcons: boolean = true;
@@ -32,30 +33,34 @@
   const calculateExpectedHeight = async (index: number) => {
     expectedHeadings = getExpectedHeadings(index);
     // fixme: Is there a better way to run subsequent code after Shadow has rendered?
-    await delay(20);
+    await tick();
     // fixme: The expected height should not be the height of Shadow but the offset of the lower boundary of Shadow.
     return shadow?.clientHeight || 0;
   };
 
   const scrollTo = async (top: number) => {
+    activeScrollCancel?.();
+    activeScrollCancel = null;
     const scrollerSource = getScroller(view);
     if (!scrollerSource) return;
+    const localForce = [...expectedHeadings];
     // When jumping, the currently clicked title should not appear in props.headings. This is different from the manual scrolling scenario and needs to be corrected.
     if (settings.scrollBehaviour === 'instant') {
-      forceRenderingHeadings = [...expectedHeadings];
+      forceRenderingHeadings = localForce;
       scrollerSource.scrollTo({ top, behavior: 'instant' });
       // waiting for the throlled scroll to complete, the waiting time should be longer than the throlle wait time.
       await delay(80);
-      headings = forceRenderingHeadings;
+      headings = localForce;
       forceRenderingHeadings = null;
     } else {
       // fixme: add easing function;
-      animateScroll(scrollerSource, top, 1000, undefined, undefined, () => {
-        headings = forceRenderingHeadings || [];
+      activeScrollCancel = animateScroll(scrollerSource, top, 1000, undefined, undefined, () => {
+        headings = localForce;
         forceRenderingHeadings = null;
+        activeScrollCancel = null;
       });
       // A tricky way to suppress the scroll event.
-      forceRenderingHeadings = [...expectedHeadings];
+      forceRenderingHeadings = localForce;
     }
   };
 
