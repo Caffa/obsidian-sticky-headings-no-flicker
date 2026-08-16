@@ -6,7 +6,8 @@
   import { onDestroy, onMount, tick } from 'svelte';
   import { getScroller } from 'src/utils/obsidian';
   import { delay } from '../utils/delay';
-  import { animateScroll } from 'src/utils/scroll';
+  import { animateScroll, computeScrollTop } from 'src/utils/scroll';
+  import type { TFile } from 'obsidian';
   export let headings: Heading[];
   export let editMode: boolean;
   export let view: MarkdownView;
@@ -14,13 +15,18 @@
   export let getExpectedHeadings: (clickHeadingIndex: number) => Heading[];
   export let showFileName: boolean;
   export let expectedHeadings: Heading[] = [];
+  export let file: TFile | undefined;
   let main: HTMLElement;
   let shadow: HTMLElement;
   let forceRenderingHeadings: Heading[] | null = null;
   let activeScrollCancel: (() => void) | null = null;
 
-  const filename = view.getFile()?.basename;
+  let filename = file?.basename ?? '';
+  $: filename = file?.basename ?? '';
   export const showIcons: boolean = true;
+
+  const iconCache: Record<string, string> = {};
+  const getIconHtml = (name: string) => (iconCache[name] ??= getIcon(name)?.outerHTML ?? '');
 
   onMount(() => {
     console.debug('mounted svelte component');
@@ -66,7 +72,7 @@
 
   const handleScrollClick = async (heading: Heading) => {
     const expectedHeight = await calculateExpectedHeight(heading.index);
-    const top = heading.offset - expectedHeight;
+    const top = computeScrollTop(heading.offset, expectedHeight);
     scrollTo(top);
   };
 </script>
@@ -87,7 +93,7 @@
           >
             {#if settings.showIcon}
               <div class="sticky-headings-icon">
-                {@html getIcon('heading')?.outerHTML}
+                {@html getIconHtml('heading')}
               </div>
             {/if}
             {filename}
@@ -111,7 +117,7 @@
                 {/each}
               {:else}
                 <div class="sticky-headings-icon">
-                  {@html getIcon(`heading-${heading.level}`)?.outerHTML}
+                  {@html getIconHtml(`heading-${heading.level}`)}
                 </div>
               {/if}
             {/if}
@@ -216,7 +222,7 @@
 
   .sticky-headings-theme-blur .sticky-headings-container {
     padding: 12px;
-    backdrop-filter: blur(12px);
+    backdrop-filter: blur(8px);
     border-bottom-left-radius: 8px;
     border-bottom-right-radius: 8px;
     position: relative;
@@ -224,32 +230,16 @@
     background: linear-gradient(to bottom, var(--background-primary) 0%, transparent 50%);
   }
 
-  .sticky-headings-theme-blur .sticky-headings-container::before {
-    content: '';
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    top: 0;
-    left: 0;
-    z-index: -1;
-    background: linear-gradient(135deg, var(--background-primary) 0%, transparent 30%);
-  }
-
-  .sticky-headings-theme-blur .sticky-headings-container::after {
-    content: '';
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    top: 0;
-    right: 0;
-    z-index: -1;
-    background: linear-gradient(35deg, transparent 70%, var(--background-primary) 100%);
-  }
-
   .sticky-headings-theme-float.sticky-headings-root {
     padding: 10px 20%;
     padding-top: calc(var(--sticky-header-verticle-offset) + 10px);
     padding-bottom: 0;
+  }
+
+  @media (max-width: 600px) {
+    .sticky-headings-theme-float.sticky-headings-root {
+      padding: 10px 4%;
+    }
   }
 
   .sticky-headings-theme-float .sticky-headings-container {

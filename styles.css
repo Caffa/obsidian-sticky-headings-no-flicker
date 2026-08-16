@@ -45,6 +45,12 @@ settings:
   --sticky-header-float-text-color: #fff;
 }
 
-.view-content {
+.has-sticky-headings {
   position: relative;
+}
+
+@media (max-width: 600px) {
+  .sticky-headings-theme-float.sticky-headings-root {
+    padding: 10px 4%;
+  }
 }

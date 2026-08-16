@@ -1,5 +1,5 @@
 import StickyHeader from './ui/StickyHeader.svelte';
-import type { MarkdownView } from 'obsidian';
+import type { MarkdownView, TFile } from 'obsidian';
 import type { Heading, ISetting } from './types';
 
 function headingsEqual(a: Heading[], b: Heading[]): boolean {
@@ -23,6 +23,7 @@ export default class StickyHeaderComponent {
   private lastGetExpectedHeadings: ((index: number) => Heading[]) | null = null;
   private lastShowFileName: boolean | undefined;
   private lastView: MarkdownView | null = null;
+  private lastFile: TFile | undefined;
 
   constructor(view: MarkdownView, settings: ISetting) {
     this.addStickyHeader(view, settings);
@@ -34,6 +35,7 @@ export default class StickyHeaderComponent {
     this.lastGetExpectedHeadings = null;
     this.lastShowFileName = undefined;
     this.lastView = null;
+    this.lastFile = undefined;
 
     // Always mount two Svelte components, matching upstream behavior. Mobile views
     // may lazily create these containers, so guard against null targets to avoid
@@ -57,6 +59,7 @@ export default class StickyHeaderComponent {
             settings,
             showFileName: false,
             expectedHeadings: [],
+            file: undefined,
           },
         })
       );
@@ -75,25 +78,32 @@ export default class StickyHeaderComponent {
             settings,
             showFileName: false,
             expectedHeadings: [],
+            file: undefined,
           },
         })
       );
     }
 
     this.stickyHeaderComponents = components;
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    view.contentEl?.addClass('has-sticky-headings');
   }
 
   removeStickyHeader() {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     this.stickyHeaderComponents?.forEach(conponent => conponent?.$destroy?.());
     this.stickyHeaderComponents = [];
+    this.lastFile = undefined;
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    this.lastView?.contentEl?.removeClass('has-sticky-headings');
   }
 
   updateHeadings(
     headings: Heading[],
     getExpectedHeadings: (index: number) => Heading[],
     showFileName: boolean,
-    view: MarkdownView
+    view: MarkdownView,
+    file?: TFile
   ) {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!this.stickyHeaderComponents?.length) return;
@@ -101,7 +111,8 @@ export default class StickyHeaderComponent {
       headingsEqual(headings, this.lastHeadings) &&
       getExpectedHeadings === this.lastGetExpectedHeadings &&
       showFileName === this.lastShowFileName &&
-      view === this.lastView
+      view === this.lastView &&
+      file === this.lastFile
     ) {
       return;
     }
@@ -109,8 +120,9 @@ export default class StickyHeaderComponent {
     this.lastGetExpectedHeadings = getExpectedHeadings;
     this.lastShowFileName = showFileName;
     this.lastView = view;
+    this.lastFile = file;
     this.stickyHeaderComponents.forEach(conponent =>
-      conponent.$set({ headings, getExpectedHeadings, showFileName, view })
+      conponent.$set({ headings, getExpectedHeadings, showFileName, view, file })
     );
   }
 

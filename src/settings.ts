@@ -49,19 +49,20 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
           this.display();
         });
       });
-    this.plugin.settings.mode !== 'disable' &&
-    new Setting(containerEl)
-      .setName(L.setting.max.title())
-      .setDesc(L.setting.max.description())
-      .addText(text => {
-        text.setValue(this.plugin.settings.max.toString());
-        text.onChange(value => {
-          this.update({
-            ...this.plugin.settings,
-            max: parseInt(value, 10) || 0,
+    if (this.plugin.settings.mode !== 'disable') {
+      new Setting(containerEl)
+        .setName(L.setting.max.title())
+        .setDesc(L.setting.max.description())
+        .addText(text => {
+          text.setValue(this.plugin.settings.max.toString());
+          text.onChange(value => {
+            this.update({
+              ...this.plugin.settings,
+              max: parseInt(value, 10) || 0,
+            });
           });
         });
-      });
+    }
     new Setting(containerEl)
       .setName(L.setting.scrollBehaviour.title())
       .setDesc(L.setting.scrollBehaviour.description())
@@ -76,46 +77,48 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
           });
         });
       });
-    this.plugin.settings.mode !== 'disable' &&
-    new Setting(containerEl).setName(L.setting.theme.title()).addDropdown(dropdown => {
-      dropdown.addOption('flat', 'flat');
-      dropdown.addOption('blur', 'blur');
-      dropdown.addOption('float', 'float');
-      dropdown.setValue(this.plugin.settings.theme);
-      dropdown.onChange(value => {
-        this.update({
-          ...this.plugin.settings,
-
-          theme: value,
-        });
-      });
-    });
-    this.plugin.settings.mode !== 'disable' &&
-    new Setting(containerEl)
-      .setName(L.setting.indicators.title())
-      .setDesc(L.setting.indicators.description())
-      .addToggle(toggle => {
-        toggle.setValue(this.plugin.settings.showIcon);
-        toggle.onChange(value => {
+    if (this.plugin.settings.mode !== 'disable') {
+      new Setting(containerEl).setName(L.setting.theme.title()).addDropdown(dropdown => {
+        dropdown.addOption('flat', 'flat');
+        dropdown.addOption('blur', 'blur');
+        dropdown.addOption('float', 'float');
+        dropdown.setValue(this.plugin.settings.theme);
+        dropdown.onChange(value => {
           this.update({
             ...this.plugin.settings,
-            showIcon: value,
+            theme: value,
           });
         });
       });
-    this.plugin.settings.mode !== 'disable' &&
-    new Setting(containerEl)
-      .setName(L.setting.autoShowFileName.title())
-      .setDesc(L.setting.autoShowFileName.description())
-      .addToggle(toggle => {
-        toggle.setValue(this.plugin.settings.autoShowFileName);
-        toggle.onChange(value => {
-          this.update({
-            ...this.plugin.settings,
-            autoShowFileName: value,
+    }
+    if (this.plugin.settings.mode !== 'disable') {
+      new Setting(containerEl)
+        .setName(L.setting.indicators.title())
+        .setDesc(L.setting.indicators.description())
+        .addToggle(toggle => {
+          toggle.setValue(this.plugin.settings.showIcon);
+          toggle.onChange(value => {
+            this.update({
+              ...this.plugin.settings,
+              showIcon: value,
+            });
           });
         });
-      });
+    }
+    if (this.plugin.settings.mode !== 'disable') {
+      new Setting(containerEl)
+        .setName(L.setting.autoShowFileName.title())
+        .setDesc(L.setting.autoShowFileName.description())
+        .addToggle(toggle => {
+          toggle.setValue(this.plugin.settings.autoShowFileName);
+          toggle.onChange(value => {
+            this.update({
+              ...this.plugin.settings,
+              autoShowFileName: value,
+            });
+          });
+        });
+    }
     new Setting(containerEl).setName(L.setting.showInStatusBar()).addToggle(toggle => {
       toggle.setValue(this.plugin.settings.showInStatusBar);
       toggle.onChange(value => {
@@ -125,21 +128,22 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
         });
       });
     });
-    this.plugin.settings.mode !== 'disable' &&
-    new Setting(containerEl)
-      .setName(L.setting.boundaryOffset.title())
-      .setDesc(L.setting.boundaryOffset.description())
-      .addText(text => {
-        text.setValue(this.plugin.settings.boundaryOffset);
-        text.onChange(value => {
-          const isValid = /^-?\d+(%|px)$/.test(value);
-          if (isValid) {
-            this.update({
-              ...this.plugin.settings,
-              boundaryOffset: value,
-            });
-          }
+    if (this.plugin.settings.mode !== 'disable') {
+      new Setting(containerEl)
+        .setName(L.setting.boundaryOffset.title())
+        .setDesc(L.setting.boundaryOffset.description())
+        .addText(text => {
+          text.setValue(this.plugin.settings.boundaryOffset);
+          text.onChange(value => {
+            const isValid = /^-?\d+(%|px)$/.test(value);
+            if (isValid) {
+              this.update({
+                ...this.plugin.settings,
+                boundaryOffset: value,
+              });
+            }
+          });
         });
-      });
+    }
   }
 }

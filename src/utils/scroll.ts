@@ -29,3 +29,7 @@ export function animateScroll(
     cancelAnimationFrame(animationFrame);
   };
 }
+
+export function computeScrollTop(offset: number, stickyHeight: number): number {
+  return offset - stickyHeight - 4;
+}

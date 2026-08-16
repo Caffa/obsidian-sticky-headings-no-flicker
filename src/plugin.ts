@@ -21,7 +21,8 @@ import { throttle } from 'lodash';
 import { calcIndentLevels } from './utils/calcIndentLevels';
 import { makeExpectedHeadings } from './utils/makeExpectedHeadings';
 import { HeadingSuggester } from './ui/statusBar/suggester';
-import { animateScroll } from './utils/scroll';
+import { animateScroll, computeScrollTop } from './utils/scroll';
+import { getCachedTitle, invalidateMarkdownCacheForFile, setCachedTitle } from './utils/markdownCache';
 
 type FileResolveMap = Map<string, FileResolveEntry>;
 
@@ -32,7 +33,7 @@ export default class StickyHeadingsPlugin extends Plugin {
   fileResolveMap: FileResolveMap = new Map();
   statusBarEl: HTMLElement | undefined;
   statusBarClickHandler: (() => void) | undefined;
-  markdownCache: Record<string, string> = {};
+  markdownCache: Map<string, string> = new Map();
   private lastActiveLeafId: string | null = null;
 
   // eslint-disable-next-line @typescript-eslint/no-misused-promises
@@ -131,10 +132,11 @@ export default class StickyHeadingsPlugin extends Plugin {
           const height = await this.predictHeadingsHeight(index);
           const scroller = getScroller(view);
           if (!scroller) return;
+          const top = computeScrollTop(offset, height);
           if (this.settings.scrollBehaviour === 'instant') {
-            scroller.scrollTo({ top: offset - height - 4, behavior: 'instant' });
+            scroller.scrollTo({ top, behavior: 'instant' });
           } else {
-            animateScroll(scroller, offset - height - 4, 1000);
+            animateScroll(scroller, top, 1000);
           }
         });
         modal.open();
@@ -349,7 +351,8 @@ export default class StickyHeadingsPlugin extends Plugin {
           })),
           item.getExpectedHeadings,
           this.settings.autoShowFileName && needShowFileName(item.file, this.app),
-          item.view
+          item.view,
+          item.file
         );
         this.statusBarItemEl?.switchFile(item.file, findalHeadings[findalHeadings.length - 1], item.view);
       } else {
@@ -378,6 +381,7 @@ export default class StickyHeadingsPlugin extends Plugin {
         if (item.file.path === file.path) {
           // Refresh headings — file content changed
           const myRev = ++item.resolveRevision;
+          invalidateMarkdownCacheForFile(this.markdownCache, file);
           const headings = await this.retrieveHeadings(file, item.view);
           if (myRev !== item.resolveRevision) {
             return;
@@ -446,8 +450,8 @@ export default class StickyHeadingsPlugin extends Plugin {
       getShownHeadings(headings, view, this.settings).map(async heading => {
         const cacheKey = `${file.path}::${heading.heading}`;
         let title: string;
-        if (cacheKey in this.markdownCache) {
-          title = this.markdownCache[cacheKey];
+        if (this.markdownCache.has(cacheKey)) {
+          title = getCachedTitle(this.markdownCache, cacheKey, heading.heading);
         } else {
           try {
             title = await parseMarkdown(heading.heading, this.app, view);
@@ -455,7 +459,7 @@ export default class StickyHeadingsPlugin extends Plugin {
             console.warn('Failed to parse markdown title, falling back to raw heading:', error);
             title = heading.heading;
           }
-          this.markdownCache[cacheKey] = title;
+          setCachedTitle(this.markdownCache, cacheKey, title);
         }
         return {
           ...heading,

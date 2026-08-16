@@ -20,7 +20,7 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ['main.js', 'dist/**/*', 'i18n/i18n-*.ts'],
+    ignores: ['main.js', 'dist/**/*', 'sticky-headings-no-flicker/**/*', 'i18n/i18n-*.ts'],
   },
   {
     rules: {
