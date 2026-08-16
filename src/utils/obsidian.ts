@@ -13,9 +13,9 @@ export function getHeadings(file: TFile, app: App) {
   return app.metadataCache.getFileCache(file)?.headings ?? [];
 }
 
-export function parseMarkdown(markdown: string, app: App): Promise<string> {
+export function parseMarkdown(markdown: string, app: App, view?: MarkdownView): Promise<string> {
   const div = document.createElement('div');
-  const activeView = app.workspace.getActiveViewOfType(MarkdownView);
+  const activeView = view ?? app.workspace.getActiveViewOfType(MarkdownView);
 
   if (!activeView) {
     console.warn('No active markdown view is available.');
@@ -40,8 +40,15 @@ export const isEditMode = (view: MarkdownView | null | undefined) =>
 
 export const getScroller = (view: MarkdownView): HTMLElement | null => {
   if (isEditMode(view)) {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    return view?.editor?.cm?.scrollDOM ?? null;
+    return (
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      view?.editor?.cm?.scrollDOM ??
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      view?.editMode?.containerEl?.querySelector<HTMLElement>('.cm-scroller') ??
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      view?.editMode?.containerEl ??
+      null
+    );
   }
   // preview / reading mode — prefer public containerEl, fall back to internal previewEl
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -49,7 +56,9 @@ export const getScroller = (view: MarkdownView): HTMLElement | null => {
 };
 
 export const getContainerEl = (el: HTMLElement | Element) =>
-  el.closest('.markdown-reading-view, .markdown-source-view')?.querySelector('.sticky-headings-root');
+  el
+    .closest('.markdown-reading-view, .markdown-source-view, .markdown-preview-view, .cm-editor, .view-content')
+    ?.querySelector('.sticky-headings-root');
 
 export function needShowFileName(file: TFile, app: App): boolean {
   const headings = getHeadings(file, app);

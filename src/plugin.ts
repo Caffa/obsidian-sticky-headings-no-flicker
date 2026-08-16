@@ -34,20 +34,6 @@ export default class StickyHeadingsPlugin extends Plugin {
   statusBarClickHandler: (() => void) | undefined;
   markdownCache: Record<string, string> = {};
 
-  detectPosition = throttle(
-    (event: Event, scroller: HTMLElement, item: FileResolveEntry) => {
-      const target = event.target as HTMLElement | null;
-      if (scroller) {
-        const container = target?.closest('.view-content');
-        if (container) {
-          this.setHeadingsInView(scroller, item);
-        }
-      }
-    },
-    50,
-    { leading: true, trailing: true }
-  );
-
   // eslint-disable-next-line @typescript-eslint/no-misused-promises
   async onload() {
     try {
@@ -242,10 +228,6 @@ export default class StickyHeadingsPlugin extends Plugin {
     const scroller = getScroller(view);
     if (scroller) {
       this.setHeadingsInView(scroller, item);
-    } else {
-      // On mobile the internal previewEl may be missing; still render headings
-      // using the view content container as a fallback reference.
-      this.setHeadingsInView(item.view.contentEl, item);
     }
     return item.headings;
   }
@@ -265,9 +247,10 @@ export default class StickyHeadingsPlugin extends Plugin {
       item.headings = headings;
       item.getExpectedHeadings = makeExpectedHeadings(headings, this.settings.max, this.settings.mode);
 
-      // Remove existing scroll listener if it exists
-      if (item.scrollListener && item.view.contentEl) {
-        item.view.contentEl.removeEventListener('scroll', item.scrollListener, true);
+      // Remove existing scroll listener from the element it was actually attached to
+      if (item.scrollListener && item.scrollListenerTarget) {
+        const useCapture = item.scrollListenerTarget !== item.view.contentEl;
+        item.scrollListenerTarget.removeEventListener('scroll', item.scrollListener, useCapture);
       }
 
       item.editMode = isEditSourceMode(item.view);
@@ -279,20 +262,29 @@ export default class StickyHeadingsPlugin extends Plugin {
 
       if (scroller) {
         this.setHeadingsInView(scroller, item);
-        // Create new scroll listener
+        // Create per-leaf throttled position detector
+        item.detectPosition = throttle(
+          (event: Event, throttledScroller: HTMLElement) => {
+            this.setHeadingsInView(throttledScroller, item);
+          },
+          50,
+          { leading: true, trailing: true }
+        );
         const newScrollListener = (event: Event) => {
-          this.detectPosition(event, scroller, item);
+          item.detectPosition?.(event, scroller);
         };
-        if (item.view.contentEl) {
-          item.view.contentEl.addEventListener('scroll', newScrollListener, true);
-        }
+        const useCapture = scroller !== item.view.contentEl;
+        scroller.addEventListener('scroll', newScrollListener, useCapture);
 
-        // Update the fileResolveMap with the new scroll listener
+        // Update the fileResolveMap with the new scroll listener and its target
         item.scrollListener = newScrollListener;
+        item.scrollListenerTarget = scroller;
         this.fileResolveMap.set(id, item);
       } else {
         // If there's no scroller, ensure we remove any existing listener
         item.scrollListener = null;
+        item.scrollListenerTarget = null;
+        item.detectPosition = null;
         this.fileResolveMap.set(id, item);
       }
       this.updateHeadings(item.file, item.view, item);
@@ -420,8 +412,9 @@ export default class StickyHeadingsPlugin extends Plugin {
               this.app.workspace.offref(item.layoutChangeEvent);
             }
 
-            if (item.scrollListener && item.view?.contentEl) {
-              item.view.contentEl.removeEventListener('scroll', item.scrollListener, true);
+            if (item.scrollListener && item.scrollListenerTarget) {
+              const useCapture = item.scrollListenerTarget !== item.view?.contentEl;
+              item.scrollListenerTarget.removeEventListener('scroll', item.scrollListener, useCapture);
             }
           }
           this.fileResolveMap.delete(id);
@@ -439,13 +432,13 @@ export default class StickyHeadingsPlugin extends Plugin {
 
     return await Promise.all(
       getShownHeadings(headings, view, this.settings).map(async heading => {
-        const cacheKey = heading.heading;
+        const cacheKey = `${file.path}::${heading.heading}`;
         let title: string;
         if (cacheKey in this.markdownCache) {
           title = this.markdownCache[cacheKey];
         } else {
           try {
-            title = await parseMarkdown(heading.heading, this.app);
+            title = await parseMarkdown(heading.heading, this.app, view);
           } catch (error) {
             console.warn('Failed to parse markdown title, falling back to raw heading:', error);
             title = heading.heading;
@@ -485,8 +478,9 @@ export default class StickyHeadingsPlugin extends Plugin {
           this.app.workspace.offref(item.layoutChangeEvent);
         }
 
-        if (item?.scrollListener && item?.view?.contentEl) {
-          item.view.contentEl.removeEventListener('scroll', item.scrollListener, true);
+        if (item?.scrollListener && item?.scrollListenerTarget) {
+          const useCapture = item.scrollListenerTarget !== item.view?.contentEl;
+          item.scrollListenerTarget.removeEventListener('scroll', item.scrollListener, useCapture);
         }
       } catch (error) {
         console.warn(`Error unloading sticky header for leaf ${id}:`, error);

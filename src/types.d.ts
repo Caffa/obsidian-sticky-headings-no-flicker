@@ -22,6 +22,8 @@ export interface FileResolveEntry {
   headingEl: StickyHeaderComponent;
   layoutChangeEvent: EventRef;
   scrollListener?: ((event: Event) => void) | null;
+  scrollListenerTarget?: HTMLElement | null;
+  detectPosition?: ((event: Event, scroller: HTMLElement) => void) | null;
   editMode: boolean;
   currentIndex: number;
 }
