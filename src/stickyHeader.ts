@@ -35,11 +35,14 @@ export default class StickyHeaderComponent {
     this.lastShowFileName = undefined;
     this.lastView = null;
 
-    const components: StickyHeader[] = [];
+    // Always mount two Svelte components, matching upstream behavior. Mobile views
+    // may lazily create these containers, so guard against null targets to avoid
+    // throwing 'target must be a DOM element' during lazy DOM construction.
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     const previewContentEl = view?.previewMode?.containerEl;
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     const sourceContentEl = view?.editMode?.editorEl;
+    const components: StickyHeader[] = [];
 
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (previewContentEl) {

@@ -31,6 +31,7 @@ export default class StickyHeadingsPlugin extends Plugin {
   statusBarItemEl: StatusBarItemComponent | undefined;
   fileResolveMap: FileResolveMap = new Map();
   statusBarEl: HTMLElement | undefined;
+  statusBarClickHandler: (() => void) | undefined;
   markdownCache: Record<string, string> = {};
 
   detectPosition = throttle(
@@ -107,7 +108,8 @@ export default class StickyHeadingsPlugin extends Plugin {
     if (!this.settings.showInStatusBar) {
       this.statusBarEl.style.display = 'none';
     }
-    this.statusBarEl.addEventListener('click', this.showSuggester.bind(this));
+    this.statusBarClickHandler = this.showSuggester.bind(this);
+    this.statusBarEl.addEventListener('click', this.statusBarClickHandler);
     this.statusBarItemEl = new StatusBarItemComponent(this.statusBarEl, this.settings);
     this.addCommand({
       id: 'quick navigate headings',
@@ -159,18 +161,34 @@ export default class StickyHeadingsPlugin extends Plugin {
           const target = rootEl.find('.sticky-headings-shadow');
           if (!target) return 0;
           return new Promise<number>(resolve => {
-            const observer = new MutationObserver(records => {
+            const controller = {
+              settled: false,
+              observer: null as MutationObserver | null,
+              safetyTimeout: 0,
+              finish(value: number) {
+                if (this.settled) return;
+                this.settled = true;
+                clearTimeout(this.safetyTimeout);
+                this.observer?.disconnect();
+                resolve(value);
+              },
+            };
+            controller.observer = new MutationObserver(records => {
               for (const record of records) {
-                if ((record.target as HTMLElement).classList?.contains('sticky-headings-shadow-item')) {
-                  observer.disconnect();
-                  resolve(target.clientHeight || 0);
+                const added = Array.from(record.addedNodes);
+                if (added.some(n => n instanceof HTMLElement && n.classList.contains('sticky-headings-shadow-item'))) {
+                  controller.finish(target.clientHeight || 0);
+                  return;
                 }
               }
             });
-            observer.observe(target, {
+            controller.observer.observe(target, {
               subtree: true,
               childList: true,
             });
+            controller.safetyTimeout = window.setTimeout(() => {
+              controller.finish(target.clientHeight || 0);
+            }, 250);
             item.headingEl.predictHeadingsHeight(item.getExpectedHeadings(index));
           });
         }
@@ -474,6 +492,16 @@ export default class StickyHeadingsPlugin extends Plugin {
         console.warn(`Error unloading sticky header for leaf ${id}:`, error);
       }
     });
+
+    try {
+      this.statusBarItemEl?.removeStickyHeader?.();
+      this.statusBarItemEl = undefined;
+      if (this.statusBarEl && this.statusBarClickHandler) {
+        this.statusBarEl.removeEventListener('click', this.statusBarClickHandler);
+      }
+    } catch (error) {
+      console.warn('Error unloading status bar item:', error);
+    }
 
     this.fileResolveMap.clear();
   }
