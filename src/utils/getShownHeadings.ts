@@ -46,14 +46,16 @@ export function getHeadingsWithOffsetSource(
   settings: ISetting
 ): Heading[] {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    const containerEl = view?.editMode?.containerEl?.querySelector<HTMLElement>('.cm-contentContainer');
+    const offset = containerEl?.offsetTop || 0;
+    const boundaryOffset = getBoundaryOffset(view, settings);
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    const cm = view?.editor?.cm;
     const result = headings.map<Heading>((heading, i) => {
       const { position } = heading;
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      const containerEl = view?.editMode?.containerEl?.querySelector<HTMLElement>('.cm-contentContainer');
-      const offset = containerEl?.offsetTop || 0;
-      const boundaryOffset = getBoundaryOffset(view, settings);
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      const lineBlock = view?.editor?.cm?.lineBlockAt?.(position.start.offset);
+      const lineBlock = cm?.lineBlockAt?.(position.start.offset);
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       const { top = 0 } = lineBlock ?? { top: 0 };
       return {

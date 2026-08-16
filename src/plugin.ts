@@ -33,6 +33,7 @@ export default class StickyHeadingsPlugin extends Plugin {
   statusBarEl: HTMLElement | undefined;
   statusBarClickHandler: (() => void) | undefined;
   markdownCache: Record<string, string> = {};
+  private lastActiveLeafId: string | null = null;
 
   // eslint-disable-next-line @typescript-eslint/no-misused-promises
   async onload() {
@@ -52,9 +53,15 @@ export default class StickyHeadingsPlugin extends Plugin {
       try {
         this.registerEvent(
           this.app.workspace.on('active-leaf-change', () => {
+            const activeLeaf = this.app.workspace.getMostRecentLeaf();
+            const activeLeafId = activeLeaf?.id ?? null;
+            if (activeLeafId === this.lastActiveLeafId) return;
+            this.lastActiveLeafId = activeLeafId;
             // timeout to wait for cm.editor to load
             setTimeout(() => {
-              this.checkFileResolveMap();
+              if (activeLeafId === this.lastActiveLeafId) {
+                this.checkFileResolveMap();
+              }
             }, 100);
           })
         );
