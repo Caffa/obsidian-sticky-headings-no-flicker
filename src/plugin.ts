@@ -322,15 +322,25 @@ export default class StickyHeadingsPlugin extends Plugin {
           this.statusBarItemEl?.hide();
           return;
         }
-        // Build a title cache map for O(1) lookup
+        // Build a title cache map for O(1) lookup, keyed by file path + heading
+        // start offset so titles from a different note or position don't leak in.
         const titleMap = new Map<string, string>();
         for (const h of item.headings) {
-          titleMap.set(h.heading, h.title);
+          if (item.file && h.position) {
+            const key = `${item.file.path}::${h.position.start.offset}`;
+            titleMap.set(key, h.title);
+          }
         }
-        const headings = freshHeadings.map(h => ({
-          ...h,
-          title: titleMap.get(h.heading) || h.title,
-        }));
+        const headings = freshHeadings.map(h => {
+          if (item.file && h.position) {
+            const key = `${item.file.path}::${h.position.start.offset}`;
+            return {
+              ...h,
+              title: titleMap.get(key) || h.title,
+            };
+          }
+          return h;
+        });
         // Update cache with fresh offsets + preserved titles
         item.headings = headings;
 
