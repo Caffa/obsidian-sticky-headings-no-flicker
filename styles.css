@@ -43,6 +43,8 @@ settings:
   --sticky-header-verticle-offset: 0px;
   --sticky-header-float-background-color: #000;
   --sticky-header-float-text-color: #fff;
+  --sticky-header-font-size: 12px;
+  --sticky-header-line-height: 18px;
 }
 
 .has-sticky-headings {

@@ -47,6 +47,16 @@ type RootTranslation = {
 			 */
 			description: string
 		}
+		fontSize: {
+			/**
+			 * H​e​a​d​i​n​g​ ​f​o​n​t​ ​s​i​z​e
+			 */
+			title: string
+			/**
+			 * S​i​z​e​ ​o​f​ ​t​h​e​ ​s​t​i​c​k​y​ ​h​e​a​d​i​n​g​ ​t​e​x​t​ ​i​n​ ​p​i​x​e​l​s​ ​(​1​2​–​2​0​)​.
+			 */
+			description: string
+		}
 		scrollBehaviour: {
 			/**
 			 * S​c​r​o​l​l​ ​b​e​h​a​v​i​o​u​r
@@ -139,6 +149,16 @@ export type TranslationFunctions = {
 			title: () => LocalizedString
 			/**
 			 * Maximum number of headings that can be displayed. 0 indicates no limit.
+			 */
+			description: () => LocalizedString
+		}
+		fontSize: {
+			/**
+			 * Heading font size
+			 */
+			title: () => LocalizedString
+			/**
+			 * Size of the sticky heading text in pixels (12–20).
 			 */
 			description: () => LocalizedString
 		}

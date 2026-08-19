@@ -14,6 +14,10 @@ const en: BaseTranslation = {
       title: 'Display quantity limit',
       description: 'Maximum number of headings that can be displayed. 0 indicates no limit.',
     },
+    fontSize: {
+      title: 'Heading font size',
+      description: 'Size of the sticky heading text in pixels (12–20).',
+    },
     scrollBehaviour: {
       title: 'Scroll behaviour',
       description: 'Choose between instant or smooth scrolling behaviour',

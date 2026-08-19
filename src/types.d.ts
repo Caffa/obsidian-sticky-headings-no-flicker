@@ -10,6 +10,7 @@ export interface ISetting {
   autoShowFileName: boolean;
   showInStatusBar: boolean;
   boundaryOffset: string;
+  fontSize: number;
 }
 
 export interface FileResolveEntry {

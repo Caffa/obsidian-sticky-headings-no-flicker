@@ -21,6 +21,10 @@
   let forceRenderingHeadings: Heading[] | null = null;
   let activeScrollCancel: (() => void) | null = null;
 
+  $: fontSizeStyle = settings.fontSize ? `${settings.fontSize}px` : '12px';
+  $: lineHeightStyle = settings.fontSize ? `${Math.round(settings.fontSize * 1.5)}px` : '18px';
+  $: rootStyles = `--sticky-header-font-size:${fontSizeStyle};--sticky-header-line-height:${lineHeightStyle};`;
+
   let filename = file?.basename ?? '';
   $: filename = file?.basename ?? '';
   export const showIcons: boolean = true;
@@ -79,7 +83,7 @@
 
 {#if settings.mode !== 'disable'}
   {#if (forceRenderingHeadings || headings).length > 0}
-    <div class={`sticky-headings-root sticky-headings-theme-${settings.theme}`} bind:this={main}>
+    <div class={`sticky-headings-root sticky-headings-theme-${settings.theme}`} bind:this={main} style={rootStyles}>
       <div class="sticky-headings-container">
         {#if showFileName && filename}
           <div
@@ -127,7 +131,11 @@
       </div>
     </div>
   {/if}
-  <div class={`sticky-headings-root sticky-headings-shadow sticky-headings-theme-${settings.theme}`} bind:this={shadow}>
+  <div
+    class={`sticky-headings-root sticky-headings-shadow sticky-headings-theme-${settings.theme}`}
+    bind:this={shadow}
+    style={rootStyles}
+  >
     <div class="sticky-headings-container">
       {#if showFileName && filename}
         <div class="sticky-headings-item">
@@ -152,7 +160,7 @@
   .sticky-headings-container {
     max-width: min(var(--file-line-width), var(--max-width));
     margin: 0 auto;
-    font-size: 12px;
+    font-size: var(--sticky-header-font-size, 12px);
   }
 
   .sticky-headings-root {
@@ -167,7 +175,7 @@
   }
 
   .sticky-headings-item {
-    line-height: 18px;
+    line-height: var(--sticky-header-line-height, 18px);
     display: flex;
     align-items: center;
     overflow: hidden;

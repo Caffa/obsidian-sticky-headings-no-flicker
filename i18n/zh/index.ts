@@ -13,6 +13,10 @@ const zh: Translation = {
       title: '显示数量限制',
       description: '最大显示标题数量，0 表示不限制。',
     },
+    fontSize: {
+      title: '标题字号',
+      description: '粘性标题文字大小（像素，12–20）。',
+    },
     scrollBehaviour: {
       title: '滚动效果',
       description: '选择滚动效果',

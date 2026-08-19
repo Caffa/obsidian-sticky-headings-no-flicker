@@ -13,6 +13,7 @@ export const defaultSettings = {
   autoShowFileName: true,
   showInStatusBar: false,
   boundaryOffset: '0px',
+  fontSize: 12,
 } satisfies ISetting;
 
 export default class StickyHeadingsSetting extends PluginSettingTab {
@@ -59,6 +60,20 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
             this.update({
               ...this.plugin.settings,
               max: parseInt(value, 10) || 0,
+            });
+          });
+        });
+      new Setting(containerEl)
+        .setName(L.setting.fontSize.title())
+        .setDesc(L.setting.fontSize.description())
+        .addSlider(slider => {
+          slider.setLimits(12, 20, 1);
+          slider.setDynamicTooltip();
+          slider.setValue(this.plugin.settings.fontSize);
+          slider.onChange(value => {
+            this.update({
+              ...this.plugin.settings,
+              fontSize: value,
             });
           });
         });
