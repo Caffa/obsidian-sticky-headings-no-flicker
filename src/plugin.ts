@@ -72,6 +72,30 @@ export default class StickyHeadingsPlugin extends Plugin {
 
       try {
         this.registerEvent(
+          this.app.workspace.on('file-open', (file: TFile | null) => {
+            if (!file || !isMarkdownFile(file)) return;
+            const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+            if (!view) return;
+            const leafId = view.leaf?.id;
+            if (!leafId) return;
+            const existing = this.fileResolveMap.get(leafId);
+            // Only react when this is the same leaf as a previously-opened file
+            // (new-leaf case is already handled by active-leaf-change).
+            if (!existing) return;
+            if (existing.file?.path === file.path) return; // no-op same file
+            // Defer until Obsidian finishes rebuilding the view's preview/source DOM.
+            setTimeout(() => {
+              const stillActive = this.app.workspace.getActiveViewOfType(MarkdownView)?.leaf?.id === leafId;
+              if (stillActive) this.checkFileResolveMap();
+            }, 100);
+          })
+        );
+      } catch (error) {
+        console.warn('Failed to register file-open event:', error);
+      }
+
+      try {
+        this.registerEvent(
           this.app.metadataCache.on('resolve', file => {
             this.handleResolve(file);
           })
@@ -221,10 +245,39 @@ export default class StickyHeadingsPlugin extends Plugin {
         } else {
           const item = this.fileResolveMap.get(id);
           if (item) {
+            // Tear down the previous mount + listeners bound to the now-stale DOM.
+            try {
+              item.headingEl?.removeStickyHeader?.();
+            } catch (e) {
+              console.warn('Failed to remove old sticky header on same-leaf file change:', e);
+            }
+            if (item.layoutChangeEvent) {
+              this.app.workspace.offref(item.layoutChangeEvent);
+            }
+            if (item.scrollListener && item.scrollListenerTarget) {
+              const useCapture = item.scrollListenerTarget !== item.view?.contentEl;
+              item.scrollListenerTarget.removeEventListener('scroll', item.scrollListener, useCapture);
+            }
+            item.scrollListener = null;
+            item.scrollListenerTarget = null;
+            item.detectPosition = null;
+
+            // Rebind everything to the (reused) view with the new file.
+            item.view = view;
+            item.file = file;
+            item.container = view.contentEl;
             item.editMode = isEditSourceMode(view);
             item.headings = headings;
             item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, this.settings.max, this.settings.mode);
-            item.file = file;
+            item.currentIndex = -1;
+            item.resolveRevision++;
+
+            const newHeadingEl = new StickyHeaderComponent(view, this.settings);
+            item.headingEl = newHeadingEl;
+            // eslint-disable-next-line @typescript-eslint/no-misused-promises
+            const newLayoutChange = this.app.workspace.on('layout-change', this.handleComponentUpdate.bind(this, view));
+            item.layoutChangeEvent = newLayoutChange;
+            this.registerEvent(newLayoutChange);
           }
         }
         await this.handleComponentUpdate(view);
