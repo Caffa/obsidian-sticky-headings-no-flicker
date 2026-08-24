@@ -47,12 +47,23 @@ export const getScroller = (view: MarkdownView): HTMLElement | null => {
       view?.editMode?.containerEl?.querySelector<HTMLElement>('.cm-scroller') ??
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       view?.editMode?.containerEl ??
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      view?.contentEl?.querySelector<HTMLElement>('.cm-scroller') ??
       null
     );
   }
   // preview / reading mode — prefer public containerEl, fall back to internal previewEl
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  return view?.previewMode?.containerEl ?? view?.previewMode?.renderer?.previewEl ?? null;
+  return (
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    view?.previewMode?.containerEl ??
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    view?.previewMode?.renderer?.previewEl ??
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    view?.contentEl?.querySelector<HTMLElement>('.markdown-preview-view') ??
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    view?.contentEl?.querySelector<HTMLElement>('.markdown-reading-view') ??
+    null
+  );
 };
 
 export const getContainerEl = (el: HTMLElement | Element) =>

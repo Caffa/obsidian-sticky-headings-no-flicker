@@ -25,6 +25,8 @@ export interface FileResolveEntry {
   scrollListener?: ((event: Event) => void) | null;
   scrollListenerTarget?: HTMLElement | null;
   detectPosition?: ((event: Event, scroller: HTMLElement) => void) | null;
+  retryTimer?: number;
+  retryCount?: number;
   editMode: boolean;
   currentIndex: number;
   resolveRevision: number;
@@ -40,6 +42,13 @@ export interface Heading extends HeadingCache {
 declare module 'obsidian' {
   interface MarkdownSubView {
     type: 'source' | 'preview';
+    containerEl?: HTMLElement;
+  }
+  interface MarkdownPreviewView {
+    containerEl: HTMLElement;
+  }
+  interface MarkdownSourceView {
+    containerEl?: HTMLElement;
   }
   interface RendererSection {
     height: number;

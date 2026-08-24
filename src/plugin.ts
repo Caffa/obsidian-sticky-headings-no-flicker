@@ -208,7 +208,19 @@ export default class StickyHeadingsPlugin extends Plugin {
             controller.safetyTimeout = window.setTimeout(() => {
               controller.finish(target.clientHeight || 0);
             }, 250);
-            item.headingEl.predictHeadingsHeight(item.getExpectedHeadings(index));
+            try {
+              if (typeof item.headingEl?.predictHeadingsHeight !== 'function') {
+                controller.finish(0);
+              } else {
+                Promise.resolve(item.headingEl.predictHeadingsHeight(item.getExpectedHeadings(index))).catch(error => {
+                  console.warn('predictHeadingsHeight promise rejected, finishing with current target height:', error);
+                  controller.finish(target?.clientHeight || 0);
+                });
+              }
+            } catch (error) {
+              console.warn('predictHeadingsHeight failed, finishing with current target height:', error);
+              controller.finish(target?.clientHeight || 0);
+            }
           });
         }
       }
@@ -271,6 +283,7 @@ export default class StickyHeadingsPlugin extends Plugin {
             item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, this.settings.max, this.settings.mode);
             item.currentIndex = -1;
             item.resolveRevision++;
+            item.retryCount = 0;
 
             const newHeadingEl = new StickyHeaderComponent(view, this.settings);
             item.headingEl = newHeadingEl;
@@ -291,6 +304,45 @@ export default class StickyHeadingsPlugin extends Plugin {
     const scroller = getScroller(view);
     if (scroller) {
       this.setHeadingsInView(scroller, item);
+    } else {
+      // Keep the header populated even when the scroll container isn't ready yet
+      // (common on mobile / during initial view construction). Recompute visible
+      // headings synchronously so we don't display a stale subset from item.headings.
+      const rawHeadings = getHeadings(file, this.app);
+      const freshHeadings = getShownHeadings(rawHeadings, view, this.settings);
+      const titleMap = new Map<string, string>();
+      for (const h of item.headings) {
+        if (file && h.position) {
+          const key = `${file.path}::${h.position.start.offset}`;
+          titleMap.set(key, h.title);
+        }
+      }
+      const fallbackHeadings = freshHeadings.map(h => {
+        if (file && h.position) {
+          const key = `${file.path}::${h.position.start.offset}`;
+          return {
+            ...h,
+            title: titleMap.get(key) || h.title,
+          };
+        }
+        return h;
+      });
+      item.headingEl?.updateHeadings?.(
+        fallbackHeadings,
+        item.getExpectedHeadings,
+        this.settings.autoShowFileName && needShowFileName(file, this.app),
+        item.view,
+        item.file
+      );
+      const { id } = view?.leaf ?? {};
+      const isActiveLeaf =
+        id != null &&
+        this.fileResolveMap.has(id) &&
+        this.app.workspace.getActiveViewOfType(MarkdownView)?.leaf?.id === id &&
+        !item.scrollListener;
+      if (isActiveLeaf) {
+        this.scheduleScrollerRetry(id, view);
+      }
     }
     return item.headings;
   }
@@ -307,6 +359,7 @@ export default class StickyHeadingsPlugin extends Plugin {
       }
       // Refresh headings — layout changed, so offsets need recomputing
       const headings = await this.retrieveHeadings(item.file, view);
+      if (this.fileResolveMap.get(id) !== item) return;
       item.headings = headings;
       item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, this.settings.max, this.settings.mode);
 
@@ -342,9 +395,11 @@ export default class StickyHeadingsPlugin extends Plugin {
         // Update the fileResolveMap with the new scroll listener and its target
         item.scrollListener = newScrollListener;
         item.scrollListenerTarget = scroller;
+        item.retryCount = 0;
         this.fileResolveMap.set(id, item);
       } else {
-        // If there's no scroller, ensure we remove any existing listener
+        // If there's no scroller, ensure we remove any existing listener.
+        // Retry scheduling is handled by updateHeadings when appropriate.
         item.scrollListener = null;
         item.scrollListenerTarget = null;
         item.detectPosition = null;
@@ -464,6 +519,23 @@ export default class StickyHeadingsPlugin extends Plugin {
     }
   }
 
+  private scheduleScrollerRetry(id: string, view: MarkdownView) {
+    const item = this.fileResolveMap.get(id);
+    if (!item) return;
+    if (item.retryTimer) {
+      window.clearTimeout(item.retryTimer);
+    }
+    if (item.scrollListener) return; // already have a listener
+    item.retryCount = (item.retryCount ?? 0) + 1;
+    if (item.retryCount >= 10) return;
+    item.retryTimer = window.setTimeout(() => {
+      item.retryTimer = undefined;
+      if (!this.fileResolveMap.has(id)) return;
+      if (this.app.workspace.getActiveViewOfType(MarkdownView)?.leaf?.id !== id) return;
+      this.handleComponentUpdate(view);
+    }, 100);
+  }
+
   checkFileResolveMap() {
     try {
       const validIds = new Set<string>();
@@ -494,6 +566,11 @@ export default class StickyHeadingsPlugin extends Plugin {
             if (item.scrollListener && item.scrollListenerTarget) {
               const useCapture = item.scrollListenerTarget !== item.view?.contentEl;
               item.scrollListenerTarget.removeEventListener('scroll', item.scrollListener, useCapture);
+            }
+
+            if (item.retryTimer) {
+              window.clearTimeout(item.retryTimer);
+              item.retryTimer = undefined;
             }
           }
           this.fileResolveMap.delete(id);
@@ -560,6 +637,11 @@ export default class StickyHeadingsPlugin extends Plugin {
         if (item?.scrollListener && item?.scrollListenerTarget) {
           const useCapture = item.scrollListenerTarget !== item.view?.contentEl;
           item.scrollListenerTarget.removeEventListener('scroll', item.scrollListener, useCapture);
+        }
+
+        if (item?.retryTimer) {
+          window.clearTimeout(item.retryTimer);
+          item.retryTimer = undefined;
         }
       } catch (error) {
         console.warn(`Error unloading sticky header for leaf ${id}:`, error);

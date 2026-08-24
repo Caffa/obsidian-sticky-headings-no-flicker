@@ -51,8 +51,15 @@
   const scrollTo = async (top: number) => {
     activeScrollCancel?.();
     activeScrollCancel = null;
-    const scrollerSource = getScroller(view);
-    if (!scrollerSource) return;
+    let scrollerSource = getScroller(view);
+    if (!scrollerSource) {
+      await delay(50);
+      scrollerSource = getScroller(view);
+    }
+    if (!scrollerSource) {
+      console.warn('No scroll container found for sticky header navigation');
+      return;
+    }
     const localForce = [...expectedHeadings];
     // When jumping, the currently clicked title should not appear in props.headings. This is different from the manual scrolling scenario and needs to be corrected.
     if (settings.scrollBehaviour === 'instant') {
