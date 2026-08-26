@@ -1,5 +1,4 @@
-import type StickyHeadingsPlugin from 'main';
-import type { App } from 'obsidian';
+import type { App, Plugin } from 'obsidian';
 import { PluginSettingTab, Setting } from 'obsidian';
 import L from './i18n';
 import type { ISetting } from './types';
@@ -16,12 +15,22 @@ export const defaultSettings = {
   fontSize: 12,
 } satisfies ISetting;
 
-export default class StickyHeadingsSetting extends PluginSettingTab {
-  plugin: StickyHeadingsPlugin;
+interface IStickyHeadingsPlugin extends Plugin {
+  settings: ISetting;
+  onSettingChanged: () => void;
+  saveSettings: () => Promise<void>;
+}
 
-  constructor(app: App, plugin: StickyHeadingsPlugin) {
+export default class StickyHeadingsSetting extends PluginSettingTab {
+  plugin: IStickyHeadingsPlugin;
+
+  constructor(app: App, plugin: IStickyHeadingsPlugin) {
     super(app, plugin);
     this.plugin = plugin;
+  }
+
+  private ensureSettings(): ISetting {
+    return this.plugin.settings;
   }
 
   update(data: ISetting) {
@@ -31,6 +40,7 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
   }
 
   display(): void {
+    const settings = this.ensureSettings();
     const { containerEl } = this;
     containerEl.empty();
     new Setting(containerEl)
@@ -40,25 +50,24 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
         dropdown.addOption('default', L.setting.mode.default());
         dropdown.addOption('concise', L.setting.mode.concise());
         dropdown.addOption('disable', L.setting.mode.disable());
-        dropdown.setValue(this.plugin.settings.mode);
+        dropdown.setValue(settings.mode);
         dropdown.onChange(value => {
           this.update({
-            ...this.plugin.settings,
-
+            ...settings,
             mode: value as 'default' | 'concise',
           });
           this.display();
         });
       });
-    if (this.plugin.settings.mode !== 'disable') {
+    if (settings.mode !== 'disable') {
       new Setting(containerEl)
         .setName(L.setting.max.title())
         .setDesc(L.setting.max.description())
         .addText(text => {
-          text.setValue(this.plugin.settings.max.toString());
+          text.setValue(settings.max.toString());
           text.onChange(value => {
             this.update({
-              ...this.plugin.settings,
+              ...settings,
               max: parseInt(value, 10) || 0,
             });
           });
@@ -69,10 +78,10 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
         .addSlider(slider => {
           slider.setLimits(12, 20, 1);
           slider.setDynamicTooltip();
-          slider.setValue(this.plugin.settings.fontSize);
+          slider.setValue(settings.fontSize);
           slider.onChange(value => {
             this.update({
-              ...this.plugin.settings,
+              ...settings,
               fontSize: value,
             });
           });
@@ -84,76 +93,76 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
       .addDropdown(dropdown => {
         dropdown.addOption('smooth', L.setting.scrollBehaviour.smooth());
         dropdown.addOption('instant', L.setting.scrollBehaviour.instant());
-        dropdown.setValue(this.plugin.settings.scrollBehaviour);
+        dropdown.setValue(settings.scrollBehaviour);
         dropdown.onChange(value => {
           this.update({
-            ...this.plugin.settings,
+            ...settings,
             scrollBehaviour: value as ScrollBehavior,
           });
         });
       });
-    if (this.plugin.settings.mode !== 'disable') {
+    if (settings.mode !== 'disable') {
       new Setting(containerEl).setName(L.setting.theme.title()).addDropdown(dropdown => {
         dropdown.addOption('flat', 'flat');
         dropdown.addOption('blur', 'blur');
         dropdown.addOption('float', 'float');
-        dropdown.setValue(this.plugin.settings.theme);
+        dropdown.setValue(settings.theme);
         dropdown.onChange(value => {
           this.update({
-            ...this.plugin.settings,
+            ...settings,
             theme: value,
           });
         });
       });
     }
-    if (this.plugin.settings.mode !== 'disable') {
+    if (settings.mode !== 'disable') {
       new Setting(containerEl)
         .setName(L.setting.indicators.title())
         .setDesc(L.setting.indicators.description())
         .addToggle(toggle => {
-          toggle.setValue(this.plugin.settings.showIcon);
+          toggle.setValue(settings.showIcon);
           toggle.onChange(value => {
             this.update({
-              ...this.plugin.settings,
+              ...settings,
               showIcon: value,
             });
           });
         });
     }
-    if (this.plugin.settings.mode !== 'disable') {
+    if (settings.mode !== 'disable') {
       new Setting(containerEl)
         .setName(L.setting.autoShowFileName.title())
         .setDesc(L.setting.autoShowFileName.description())
         .addToggle(toggle => {
-          toggle.setValue(this.plugin.settings.autoShowFileName);
+          toggle.setValue(settings.autoShowFileName);
           toggle.onChange(value => {
             this.update({
-              ...this.plugin.settings,
+              ...settings,
               autoShowFileName: value,
             });
           });
         });
     }
     new Setting(containerEl).setName(L.setting.showInStatusBar()).addToggle(toggle => {
-      toggle.setValue(this.plugin.settings.showInStatusBar);
+      toggle.setValue(settings.showInStatusBar);
       toggle.onChange(value => {
         this.update({
-          ...this.plugin.settings,
+          ...settings,
           showInStatusBar: value,
         });
       });
     });
-    if (this.plugin.settings.mode !== 'disable') {
+    if (settings.mode !== 'disable') {
       new Setting(containerEl)
         .setName(L.setting.boundaryOffset.title())
         .setDesc(L.setting.boundaryOffset.description())
         .addText(text => {
-          text.setValue(this.plugin.settings.boundaryOffset);
+          text.setValue(settings.boundaryOffset);
           text.onChange(value => {
             const isValid = /^-?\d+(%|px)$/.test(value);
             if (isValid) {
               this.update({
-                ...this.plugin.settings,
+                ...settings,
                 boundaryOffset: value,
               });
             }

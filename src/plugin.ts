@@ -27,7 +27,7 @@ import { getCachedTitle, invalidateMarkdownCacheForFile, setCachedTitle } from '
 type FileResolveMap = Map<string, FileResolveEntry>;
 
 export default class StickyHeadingsPlugin extends Plugin {
-  settings: ISetting = defaultSettings;
+  settings: ISetting = { ...defaultSettings };
   headingEl: StickyHeaderComponent | undefined;
   statusBarItemEl: StatusBarItemComponent | undefined;
   fileResolveMap: FileResolveMap = new Map();
@@ -36,12 +36,17 @@ export default class StickyHeadingsPlugin extends Plugin {
   markdownCache: Map<string, string> = new Map();
   private lastActiveLeafId: string | null = null;
 
+  private normalizeSettings(data?: Partial<ISetting>): ISetting {
+    return { ...defaultSettings, ...(data ?? {}) };
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-misused-promises
   async onload() {
     try {
       await this.loadSettings();
     } catch (error) {
       console.warn('Failed to load sticky headings settings, using defaults:', error);
+      this.settings = { ...defaultSettings };
     }
 
     try {
@@ -50,6 +55,8 @@ export default class StickyHeadingsPlugin extends Plugin {
       } catch (error) {
         console.warn('Failed to init status bar item:', error);
       }
+
+      this.addSettingTab(new StickyHeadingsSetting(this.app, this));
 
       try {
         this.registerEvent(
@@ -109,8 +116,6 @@ export default class StickyHeadingsPlugin extends Plugin {
       } catch (error) {
         console.warn('Failed to check file resolve map on load:', error);
       }
-
-      this.addSettingTab(new StickyHeadingsSetting(this.app, this));
     } catch (error) {
       console.warn('Sticky headings plugin onload encountered an error:', error);
     }
@@ -123,7 +128,7 @@ export default class StickyHeadingsPlugin extends Plugin {
       return;
     }
     this.statusBarEl.addClass('mod-clickable');
-    if (!this.settings.showInStatusBar) {
+    if (!this.settings?.showInStatusBar) {
       this.statusBarEl.style.display = 'none';
     }
     this.statusBarClickHandler = this.showSuggester.bind(this);
@@ -233,10 +238,11 @@ export default class StickyHeadingsPlugin extends Plugin {
       const { id } = view?.leaf ?? {};
       if (!id) return;
       const file = view.getFile();
+      const settings = this.settings ?? { ...defaultSettings };
       if (file && isMarkdownFile(file)) {
         const headings = await this.retrieveHeadings(file, view);
         if (!this.fileResolveMap.has(id)) {
-          const headingEl = new StickyHeaderComponent(view, this.settings);
+          const headingEl = new StickyHeaderComponent(view, settings);
           // eslint-disable-next-line @typescript-eslint/no-misused-promises
           const layoutChangeEvent = this.app.workspace.on('layout-change', this.handleComponentUpdate.bind(this, view));
           const getExpected = makeExpectedHeadings(() => headings, this.settings.max, this.settings.mode);
@@ -280,12 +286,12 @@ export default class StickyHeadingsPlugin extends Plugin {
             item.container = view.contentEl;
             item.editMode = isEditSourceMode(view);
             item.headings = headings;
-            item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, this.settings.max, this.settings.mode);
+            item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, settings.max, settings.mode);
             item.currentIndex = -1;
             item.resolveRevision++;
             item.retryCount = 0;
 
-            const newHeadingEl = new StickyHeaderComponent(view, this.settings);
+            const newHeadingEl = new StickyHeaderComponent(view, settings);
             item.headingEl = newHeadingEl;
             // eslint-disable-next-line @typescript-eslint/no-misused-promises
             const newLayoutChange = this.app.workspace.on('layout-change', this.handleComponentUpdate.bind(this, view));
@@ -354,14 +360,17 @@ export default class StickyHeadingsPlugin extends Plugin {
       if (!id) return;
       const item = this.fileResolveMap.get(id);
       if (!item) return;
-      if (!item.headingEl.stickyHeaderComponents?.length) {
-        item.headingEl.addStickyHeader(item.view, this.settings);
-      }
+
       // Refresh headings — layout changed, so offsets need recomputing
       const headings = await this.retrieveHeadings(item.file, view);
       if (this.fileResolveMap.get(id) !== item) return;
       item.headings = headings;
       item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, this.settings.max, this.settings.mode);
+
+      // Only mount / remount after we know this async call is still the latest for the leaf.
+      if (!item.headingEl.stickyHeaderComponents?.length) {
+        item.headingEl.addStickyHeader(item.view, this.settings);
+      }
 
       // Remove existing scroll listener from the element it was actually attached to
       if (item.scrollListener && item.scrollListenerTarget) {
@@ -505,8 +514,13 @@ export default class StickyHeadingsPlugin extends Plugin {
             return;
           }
           item.headings = headings;
-          item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, this.settings.max, this.settings.mode);
+          item.getExpectedHeadings = makeExpectedHeadings(
+            () => item.headings,
+            this.settings?.max ?? defaultSettings.max,
+            this.settings?.mode ?? defaultSettings.mode
+          );
           this.updateHeadings(file, item.view, item);
+
           if (!item.resolve) {
             item.resolve = true;
             ids.push(id);
@@ -610,6 +624,7 @@ export default class StickyHeadingsPlugin extends Plugin {
   }
 
   onSettingChanged() {
+    this.settings = this.settings || { ...defaultSettings };
     this.fileResolveMap.forEach(item => {
       if (item.headingEl) {
         item.headingEl.updateSettings(this.settings);
@@ -662,10 +677,7 @@ export default class StickyHeadingsPlugin extends Plugin {
   }
 
   async loadSettings() {
-    this.settings = {
-      ...defaultSettings,
-      ...((await this.loadData()) as ISetting),
-    };
+    this.settings = this.normalizeSettings((await this.loadData()) as Partial<ISetting> | undefined);
   }
 
   async saveSettings() {
