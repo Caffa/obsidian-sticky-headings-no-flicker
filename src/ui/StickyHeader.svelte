@@ -181,6 +181,12 @@
     padding-top: var(--sticky-header-verticle-offset);
   }
 
+  :global(.is-mobile) .sticky-headings-root,
+  :global(.is-phone) .sticky-headings-root {
+    top: env(safe-area-inset-top);
+    padding-top: calc(var(--sticky-header-verticle-offset) + env(safe-area-inset-top));
+  }
+
   .sticky-headings-item {
     line-height: var(--sticky-header-line-height, 18px);
     display: flex;

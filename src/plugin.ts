@@ -2,6 +2,7 @@
 import type { TFile } from 'obsidian';
 import { MarkdownView, Plugin } from 'obsidian';
 import type { FileResolveEntry, Heading, ISetting } from './types';
+import { Platform } from 'obsidian';
 import StickyHeadingsSetting, { defaultSettings } from './settings';
 import {
   getContainerEl,
@@ -38,6 +39,37 @@ export default class StickyHeadingsPlugin extends Plugin {
 
   private normalizeSettings(data?: Partial<ISetting>): ISetting {
     return { ...defaultSettings, ...(data ?? {}) };
+  }
+
+  private dumpDiagnostics(view: MarkdownView, item: FileResolveEntry) {
+    try {
+      const scroller = getScroller(view);
+      const mountTargets = item.headingEl?.stickyHeaderComponents?.length ?? 0;
+      const headingCount = item.headings?.length ?? 0;
+      const diag = {
+        leafId: view?.leaf?.id,
+        mode: isEditMode(view) ? 'edit' : 'preview',
+        platform: Platform.isMobile ? 'mobile' : 'desktop',
+        scrollerFound: !!scroller,
+        scrollerSummary: scroller ? { tag: scroller.tagName, classList: Array.from(scroller.classList) } : null,
+        mountTargets,
+        headingCount,
+        retryCount: item.retryCount ?? 0,
+        hasScrollListener: !!item.scrollListener,
+      };
+      document.body.dataset.stickyHeadingsDebug = JSON.stringify(diag);
+      console.warn('[sticky-headings] diag', diag);
+    } catch (error) {
+      console.warn('[sticky-headings] diag failed:', error);
+    }
+  }
+
+  private clearStickyDiagnostics() {
+    try {
+      delete document.body.dataset.stickyHeadingsDebug;
+    } catch {
+      // ignore
+    }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-misused-promises
@@ -273,12 +305,20 @@ export default class StickyHeadingsPlugin extends Plugin {
               this.app.workspace.offref(item.layoutChangeEvent);
             }
             if (item.scrollListener && item.scrollListenerTarget) {
-              const useCapture = item.scrollListenerTarget !== item.view?.contentEl;
+              const useCapture = item.scrollListenerTarget === item.view?.contentEl;
               item.scrollListenerTarget.removeEventListener('scroll', item.scrollListener, useCapture);
+            }
+            if (item.view?.contentEl) {
+              delete item.view.contentEl.dataset.stickyScrollCapture;
             }
             item.scrollListener = null;
             item.scrollListenerTarget = null;
             item.detectPosition = null;
+
+            if (item.retryTimer) {
+              window.clearTimeout(item.retryTimer);
+              item.retryTimer = undefined;
+            }
 
             // Rebind everything to the (reused) view with the new file.
             item.view = view;
@@ -374,8 +414,12 @@ export default class StickyHeadingsPlugin extends Plugin {
 
       // Remove existing scroll listener from the element it was actually attached to
       if (item.scrollListener && item.scrollListenerTarget) {
-        const useCapture = item.scrollListenerTarget !== item.view.contentEl;
+        const useCapture = item.scrollListenerTarget === item.view.contentEl;
         item.scrollListenerTarget.removeEventListener('scroll', item.scrollListener, useCapture);
+      }
+
+      if (item.view?.contentEl) {
+        delete item.view.contentEl.dataset.stickyScrollCapture;
       }
 
       item.editMode = isEditSourceMode(item.view);
@@ -387,27 +431,36 @@ export default class StickyHeadingsPlugin extends Plugin {
 
       if (scroller) {
         this.setHeadingsInView(scroller, item);
+      }
+
+      // Attach scroll listener to view.contentEl in capture phase so we never
+      // miss scroll events on mobile where the true scroller may be nested or
+      // swapped after layout changes. getScroller is still used for the read path.
+      const scrollCaptureTarget = item.view.contentEl;
+      if (scrollCaptureTarget) {
         // Create per-leaf throttled position detector
         item.detectPosition = throttle(
-          (event: Event, throttledScroller: HTMLElement) => {
+          (_event: Event, throttledScroller: HTMLElement) => {
             this.setHeadingsInView(throttledScroller, item);
           },
           50,
           { leading: true, trailing: true }
         );
         const newScrollListener = (event: Event) => {
-          item.detectPosition?.(event, scroller);
+          const currentScroller = getScroller(item.view);
+          if (currentScroller) {
+            item.detectPosition?.(event, currentScroller);
+          }
         };
-        const useCapture = scroller !== item.view.contentEl;
-        scroller.addEventListener('scroll', newScrollListener, useCapture);
+        scrollCaptureTarget.addEventListener('scroll', newScrollListener, true);
+        scrollCaptureTarget.dataset.stickyScrollCapture = '1';
 
-        // Update the fileResolveMap with the new scroll listener and its target
         item.scrollListener = newScrollListener;
-        item.scrollListenerTarget = scroller;
+        item.scrollListenerTarget = scrollCaptureTarget;
         item.retryCount = 0;
         this.fileResolveMap.set(id, item);
       } else {
-        // If there's no scroller, ensure we remove any existing listener.
+        // If there's no contentEl, ensure we remove any existing listener.
         // Retry scheduling is handled by updateHeadings when appropriate.
         item.scrollListener = null;
         item.scrollListenerTarget = null;
@@ -415,6 +468,7 @@ export default class StickyHeadingsPlugin extends Plugin {
         this.fileResolveMap.set(id, item);
       }
       this.updateHeadings(item.file, item.view, item);
+      this.dumpDiagnostics(item.view, item);
     } catch (error) {
       console.warn('Failed to handle component update:', error);
     }
@@ -530,6 +584,10 @@ export default class StickyHeadingsPlugin extends Plugin {
       if (ids.length > 0) {
         this.checkFileResolveMap();
       }
+
+      if (this.fileResolveMap.size === 0) {
+        this.clearStickyDiagnostics();
+      }
     }
   }
 
@@ -541,13 +599,16 @@ export default class StickyHeadingsPlugin extends Plugin {
     }
     if (item.scrollListener) return; // already have a listener
     item.retryCount = (item.retryCount ?? 0) + 1;
-    if (item.retryCount >= 10) return;
+    const MAX_RETRIES = 20;
+    if (item.retryCount > MAX_RETRIES) return;
+    const delay = Math.min(100 + item.retryCount ** 2 * 10, 3500);
+    console.warn('[sticky-headings] scroller retry', { leafId: id, retryCount: item.retryCount });
     item.retryTimer = window.setTimeout(() => {
       item.retryTimer = undefined;
       if (!this.fileResolveMap.has(id)) return;
       if (this.app.workspace.getActiveViewOfType(MarkdownView)?.leaf?.id !== id) return;
       this.handleComponentUpdate(view);
-    }, 100);
+    }, delay);
   }
 
   checkFileResolveMap() {
@@ -578,7 +639,7 @@ export default class StickyHeadingsPlugin extends Plugin {
             }
 
             if (item.scrollListener && item.scrollListenerTarget) {
-              const useCapture = item.scrollListenerTarget !== item.view?.contentEl;
+              const useCapture = item.scrollListenerTarget === item.view?.contentEl;
               item.scrollListenerTarget.removeEventListener('scroll', item.scrollListener, useCapture);
             }
 
@@ -586,10 +647,18 @@ export default class StickyHeadingsPlugin extends Plugin {
               window.clearTimeout(item.retryTimer);
               item.retryTimer = undefined;
             }
+
+            if (item.view?.contentEl) {
+              delete item.view.contentEl.dataset.stickyScrollCapture;
+            }
           }
           this.fileResolveMap.delete(id);
         }
       });
+
+      if (this.fileResolveMap.size === 0) {
+        this.clearStickyDiagnostics();
+      }
     } catch (error) {
       console.warn('Failed to check file resolve map:', error);
     }
@@ -650,13 +719,17 @@ export default class StickyHeadingsPlugin extends Plugin {
         }
 
         if (item?.scrollListener && item?.scrollListenerTarget) {
-          const useCapture = item.scrollListenerTarget !== item.view?.contentEl;
+          const useCapture = item.scrollListenerTarget === item.view?.contentEl;
           item.scrollListenerTarget.removeEventListener('scroll', item.scrollListener, useCapture);
         }
 
         if (item?.retryTimer) {
           window.clearTimeout(item.retryTimer);
           item.retryTimer = undefined;
+        }
+
+        if (item?.view?.contentEl) {
+          delete item.view.contentEl.dataset.stickyScrollCapture;
         }
       } catch (error) {
         console.warn(`Error unloading sticky header for leaf ${id}:`, error);
@@ -674,6 +747,7 @@ export default class StickyHeadingsPlugin extends Plugin {
     }
 
     this.fileResolveMap.clear();
+    this.clearStickyDiagnostics();
   }
 
   async loadSettings() {

@@ -38,33 +38,62 @@ export const isEditSourceMode = (view: MarkdownView) =>
 export const isEditMode = (view: MarkdownView | null | undefined) =>
   view?.currentMode != null && view.currentMode.type !== 'preview';
 
-export const getScroller = (view: MarkdownView): HTMLElement | null => {
-  if (isEditMode(view)) {
-    return (
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      view?.editor?.cm?.scrollDOM ??
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      view?.editMode?.containerEl?.querySelector<HTMLElement>('.cm-scroller') ??
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      view?.editMode?.containerEl ??
-      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-      view?.contentEl?.querySelector<HTMLElement>('.cm-scroller') ??
-      null
-    );
+const warnedBranches = new WeakMap<MarkdownView, Set<string>>();
+
+function warnOnce(view: MarkdownView, branch: string, mode: string, filePath: string | undefined) {
+  let set = warnedBranches.get(view);
+  if (!set) {
+    set = new Set();
+    warnedBranches.set(view, set);
   }
-  // preview / reading mode — prefer public containerEl, fall back to internal previewEl
-  return (
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    view?.previewMode?.containerEl ??
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    view?.previewMode?.renderer?.previewEl ??
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    view?.contentEl?.querySelector<HTMLElement>('.markdown-preview-view') ??
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    view?.contentEl?.querySelector<HTMLElement>('.markdown-reading-view') ??
-    null
-  );
+  if (set.has(branch)) return;
+  set.add(branch);
+  console.warn('[sticky-headings] getScroller fallback', { mode, branch, filePath });
+}
+
+/* eslint-disable @typescript-eslint/no-unnecessary-condition */
+export const getScroller = (view: MarkdownView): HTMLElement | null => {
+  const mode = isEditMode(view) ? 'edit' : 'preview';
+  const filePath = view.file?.path;
+  if (isEditMode(view)) {
+    const scrollDOM = view?.editor?.cm?.scrollDOM;
+    if (scrollDOM) return scrollDOM;
+
+    warnOnce(view, 'edit.containerEl-cm-scroller', mode, filePath);
+    const containerScroller = view?.editMode?.containerEl?.querySelector<HTMLElement>('.cm-scroller');
+    if (containerScroller) return containerScroller;
+
+    warnOnce(view, 'edit.containerEl', mode, filePath);
+    const containerEl = view?.editMode?.containerEl;
+    if (containerEl) return containerEl;
+
+    warnOnce(view, 'edit.contentEl-cm-scroller', mode, filePath);
+    const contentScroller = view?.contentEl?.querySelector<HTMLElement>('.cm-scroller');
+    if (contentScroller) return contentScroller;
+
+    warnOnce(view, 'edit.contentEl', mode, filePath);
+    return view?.contentEl ?? null;
+  }
+
+  const previewContainer = view?.previewMode?.containerEl;
+  if (previewContainer) return previewContainer;
+
+  warnOnce(view, 'preview.renderer-previewEl', mode, filePath);
+  const previewEl = view?.previewMode?.renderer?.previewEl;
+  if (previewEl) return previewEl;
+
+  warnOnce(view, 'preview.contentEl-markdown-preview-view', mode, filePath);
+  const markdownPreview = view?.contentEl?.querySelector<HTMLElement>('.markdown-preview-view');
+  if (markdownPreview) return markdownPreview;
+
+  warnOnce(view, 'preview.contentEl-markdown-reading-view', mode, filePath);
+  const markdownReading = view?.contentEl?.querySelector<HTMLElement>('.markdown-reading-view');
+  if (markdownReading) return markdownReading;
+
+  warnOnce(view, 'preview.contentEl', mode, filePath);
+  return view?.contentEl ?? null;
 };
+/* eslint-enable @typescript-eslint/no-unnecessary-condition */
 
 export const getContainerEl = (el: HTMLElement | Element) =>
   el

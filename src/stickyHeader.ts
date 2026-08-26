@@ -62,6 +62,7 @@ export default class StickyHeaderComponent {
   private lastShowFileName: boolean | undefined;
   private lastView: MarkdownView | null = null;
   private lastFile: TFile | undefined;
+  private mountRetryTimer: number | undefined;
 
   constructor(view: MarkdownView, settings: ISetting) {
     this.addStickyHeader(view, settings);
@@ -72,23 +73,48 @@ export default class StickyHeaderComponent {
     return parent.contains(child);
   }
 
-  addStickyHeader(view: MarkdownView, settings: ISetting | undefined) {
-    this.removeStickyHeader();
-    this.lastHeadings = [];
-    this.lastGetExpectedHeadings = null;
-    this.lastShowFileName = undefined;
-    this.lastView = null;
-    this.lastFile = undefined;
+  private scheduleMountRetry(view: MarkdownView, settings: ISetting | undefined) {
+    const backoffs = [100, 200, 300, 400, 500, 750, 1000, 1500];
+    let count = 0;
+    const tryMount = () => {
+      if (!view.contentEl.isConnected) {
+        this.mountRetryTimer = window.setTimeout(tryMount, backoffs[Math.min(count, backoffs.length - 1)]);
+        return;
+      }
+      count++;
+      const targets = resolveMountContainers(view);
+      if (targets.length > 0) {
+        this.mountTargets(view, settings, targets);
+        this.mountRetryTimer = undefined;
+        return;
+      }
+      console.warn('[sticky-headings] mount target missing, retry', count);
+      if (count >= backoffs.length) {
+        // Last resort: try resolveMountContainers one more time, then fall back to contentEl
+        const finalTargets = resolveMountContainers(view);
+        if (finalTargets.length > 0) {
+          this.mountTargets(view, settings, finalTargets);
+          this.mountRetryTimer = undefined;
+          return;
+        }
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- defensive: view may be disconnected on mobile
+        if (view.contentEl.isConnected) {
+          console.warn('[sticky-headings] using contentEl as last-resort mount target', { path: view.file?.path });
+          const fallbackRoot = view.contentEl.createDiv({ cls: 'sticky-headings-root' });
+          this.mountTargets(view, settings, [fallbackRoot]);
+          this.mountRetryTimer = undefined;
+          return;
+        }
+        console.warn('[sticky-headings] mount target never resolved', { path: view.file?.path });
+        this.mountRetryTimer = undefined;
+        return;
+      }
+      this.mountRetryTimer = window.setTimeout(tryMount, backoffs[count]);
+    };
+    this.mountRetryTimer = window.setTimeout(tryMount, backoffs[0]);
+  }
 
-    const targets = resolveMountContainers(view);
-    if (targets.length === 0) {
-      console.warn('No mount container found for sticky header; deferring mount.', {
-        path: view.file?.path,
-      });
-      this.stickyHeaderComponents = [];
-      return;
-    }
-
+  private mountTargets(view: MarkdownView, settings: ISetting | undefined, targets: HTMLElement[]) {
     const safeSettings = settings || { ...defaultSettings };
     this.lastView = view;
     const components: StickyHeader[] = [];
@@ -114,7 +140,31 @@ export default class StickyHeaderComponent {
     view.contentEl.addClass('has-sticky-headings');
   }
 
+  addStickyHeader(view: MarkdownView, settings: ISetting | undefined) {
+    this.removeStickyHeader();
+    this.lastHeadings = [];
+    this.lastGetExpectedHeadings = null;
+    this.lastShowFileName = undefined;
+    this.lastView = null;
+    this.lastFile = undefined;
+
+    const targets = resolveMountContainers(view);
+    if (targets.length === 0) {
+      console.warn('[sticky-headings] no mount target available; scheduling retry', {
+        path: view.file?.path,
+      });
+      this.scheduleMountRetry(view, settings);
+      return;
+    }
+
+    this.mountTargets(view, settings, targets);
+  }
+
   removeStickyHeader() {
+    if (this.mountRetryTimer) {
+      window.clearTimeout(this.mountRetryTimer);
+      this.mountRetryTimer = undefined;
+    }
     this.stickyHeaderComponents.forEach(conponent => conponent.$destroy());
     this.stickyHeaderComponents = [];
     this.lastFile = undefined;
