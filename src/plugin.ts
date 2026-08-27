@@ -57,7 +57,6 @@ export default class StickyHeadingsPlugin extends Plugin {
         retryCount: item.retryCount ?? 0,
         hasScrollListener: !!item.scrollListener,
       };
-      document.body.dataset.stickyHeadingsDebug = JSON.stringify(diag);
       console.warn('[sticky-headings] diag', diag);
     } catch (error) {
       console.warn('[sticky-headings] diag failed:', error);

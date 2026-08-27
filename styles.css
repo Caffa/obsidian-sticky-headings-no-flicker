@@ -62,22 +62,3 @@ settings:
   top: env(safe-area-inset-top);
   padding-top: calc(var(--sticky-header-verticle-offset) + env(safe-area-inset-top));
 }
-
-body[data-sticky-headings-debug]::after {
-  content: attr(data-sticky-headings-debug);
-  position: fixed;
-  bottom: 8px;
-  right: 8px;
-  max-width: 80vw;
-  max-height: 50vh;
-  overflow: auto;
-  pointer-events: none;
-  font-size: 10px;
-  line-height: 1.4;
-  color: #22c55e;
-  background: rgba(0, 0, 0, 0.85);
-  padding: 6px 8px;
-  border-radius: 4px;
-  z-index: 9999;
-  word-break: break-word;
-}
