@@ -183,8 +183,8 @@
 
   :global(.is-mobile) .sticky-headings-root,
   :global(.is-phone) .sticky-headings-root {
-    top: env(safe-area-inset-top);
-    padding-top: calc(var(--sticky-header-verticle-offset) + env(safe-area-inset-top));
+    top: 0;
+    padding-top: var(--sticky-header-verticle-offset);
   }
 
   .sticky-headings-item {
