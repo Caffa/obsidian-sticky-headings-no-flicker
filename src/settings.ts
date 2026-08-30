@@ -34,8 +34,8 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
   }
 
   update(data: ISetting) {
-    this.plugin.settings = data;
-    this.plugin.saveSettings();
+    this.plugin.settings = { ...this.plugin.settings, ...data };
+    void this.plugin.saveSettings();
     this.plugin.onSettingChanged();
   }
 
@@ -53,7 +53,7 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
         dropdown.setValue(settings.mode);
         dropdown.onChange(value => {
           this.update({
-            ...settings,
+            ...this.plugin.settings,
             mode: value as 'default' | 'concise',
           });
           this.display();
@@ -67,7 +67,7 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
           text.setValue(settings.max.toString());
           text.onChange(value => {
             this.update({
-              ...settings,
+              ...this.plugin.settings,
               max: parseInt(value, 10) || 0,
             });
           });
@@ -81,7 +81,7 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
           slider.setValue(settings.fontSize);
           slider.onChange(value => {
             this.update({
-              ...settings,
+              ...this.plugin.settings,
               fontSize: value,
             });
           });
@@ -96,7 +96,7 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
         dropdown.setValue(settings.scrollBehaviour);
         dropdown.onChange(value => {
           this.update({
-            ...settings,
+            ...this.plugin.settings,
             scrollBehaviour: value as ScrollBehavior,
           });
         });
@@ -109,7 +109,7 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
         dropdown.setValue(settings.theme);
         dropdown.onChange(value => {
           this.update({
-            ...settings,
+            ...this.plugin.settings,
             theme: value,
           });
         });
@@ -123,7 +123,7 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
           toggle.setValue(settings.showIcon);
           toggle.onChange(value => {
             this.update({
-              ...settings,
+              ...this.plugin.settings,
               showIcon: value,
             });
           });
@@ -137,7 +137,7 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
           toggle.setValue(settings.autoShowFileName);
           toggle.onChange(value => {
             this.update({
-              ...settings,
+              ...this.plugin.settings,
               autoShowFileName: value,
             });
           });
@@ -147,7 +147,7 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
       toggle.setValue(settings.showInStatusBar);
       toggle.onChange(value => {
         this.update({
-          ...settings,
+          ...this.plugin.settings,
           showInStatusBar: value,
         });
       });
@@ -162,7 +162,7 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
             const isValid = /^-?\d+(%|px)$/.test(value);
             if (isValid) {
               this.update({
-                ...settings,
+                ...this.plugin.settings,
                 boundaryOffset: value,
               });
             }
