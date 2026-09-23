@@ -57,6 +57,8 @@ function resolveMountContainers(view: MarkdownView): HTMLElement[] {
 
 export default class StickyHeaderComponent {
   stickyHeaderComponents: StickyHeader[] = [];
+  mountTargets: HTMLElement[] = [];
+  private fallbackTargets = new WeakSet<HTMLElement>();
   private lastHeadings: Heading[] = [];
   private lastGetExpectedHeadings: ((index: number) => Heading[]) | null = null;
   private lastShowFileName: boolean | undefined;
@@ -84,7 +86,7 @@ export default class StickyHeaderComponent {
       count++;
       const targets = resolveMountContainers(view);
       if (targets.length > 0) {
-        this.mountTargets(view, settings, targets);
+        this.mountTargetsInternal(view, settings, targets);
         this.mountRetryTimer = undefined;
         return;
       }
@@ -93,7 +95,7 @@ export default class StickyHeaderComponent {
         // Last resort: try resolveMountContainers one more time, then fall back to contentEl
         const finalTargets = resolveMountContainers(view);
         if (finalTargets.length > 0) {
-          this.mountTargets(view, settings, finalTargets);
+          this.mountTargetsInternal(view, settings, finalTargets);
           this.mountRetryTimer = undefined;
           return;
         }
@@ -101,11 +103,12 @@ export default class StickyHeaderComponent {
         if (view.contentEl.isConnected) {
           console.warn('[sticky-headings] using contentEl as last-resort mount target', { path: view.file?.path });
           const fallbackRoot = view.contentEl.createDiv({ cls: 'sticky-headings-root' });
-          this.mountTargets(view, settings, [fallbackRoot]);
+          this.fallbackTargets.add(fallbackRoot);
+          this.mountTargetsInternal(view, settings, [fallbackRoot]);
           this.mountRetryTimer = undefined;
           return;
         }
-        console.warn('[sticky-headings] mount target never resolved', { path: view.file?.path });
+        console.warn('[sticky-headings] mount target never resolved; giving up', { path: view.file?.path });
         this.mountRetryTimer = undefined;
         return;
       }
@@ -114,7 +117,7 @@ export default class StickyHeaderComponent {
     this.mountRetryTimer = window.setTimeout(tryMount, backoffs[0]);
   }
 
-  private mountTargets(view: MarkdownView, settings: ISetting | undefined, targets: HTMLElement[]) {
+  private mountTargetsInternal(view: MarkdownView, settings: ISetting | undefined, targets: HTMLElement[]) {
     const safeSettings = settings || { ...defaultSettings };
     this.lastView = view;
     const components: StickyHeader[] = [];
@@ -137,6 +140,7 @@ export default class StickyHeaderComponent {
     }
 
     this.stickyHeaderComponents = components;
+    this.mountTargets = targets;
     view.contentEl.addClass('has-sticky-headings');
   }
 
@@ -157,7 +161,7 @@ export default class StickyHeaderComponent {
       return;
     }
 
-    this.mountTargets(view, settings, targets);
+    this.mountTargetsInternal(view, settings, targets);
   }
 
   removeStickyHeader() {
@@ -167,11 +171,24 @@ export default class StickyHeaderComponent {
     }
     this.stickyHeaderComponents.forEach(conponent => conponent.$destroy());
     this.stickyHeaderComponents = [];
+    this.mountTargets.forEach(target => {
+      if (this.fallbackTargets.has(target) && target.parentNode) {
+        target.parentNode.removeChild(target);
+        this.fallbackTargets.delete(target);
+      }
+    });
+    this.mountTargets = [];
     this.lastFile = undefined;
     if (this.lastView) {
       this.lastView.contentEl.removeClass('has-sticky-headings');
     }
     this.lastView = null;
+  }
+
+  hasMountTargetFor(view: MarkdownView): boolean {
+    if (!this.mountTargets.length) return false;
+    const currentTargets = resolveMountContainers(view);
+    return this.mountTargets.some(target => currentTargets.includes(target));
   }
 
   updateHeadings(

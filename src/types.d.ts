@@ -27,6 +27,11 @@ export interface FileResolveEntry {
   detectPosition?: ((event: Event, scroller: HTMLElement) => void) | null;
   retryTimer?: number;
   retryCount?: number;
+  watchdogRecoveries?: number;
+  watchdogRecoveryWindowStart?: number;
+  watchdogRecovering?: boolean;
+  handleUpdateInFlight?: boolean;
+  handleUpdateInFlightSince?: number;
   editMode: boolean;
   currentIndex: number;
   resolveRevision: number;

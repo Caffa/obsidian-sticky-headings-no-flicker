@@ -9,8 +9,27 @@ export function isMarkdownFile(file: TFile | TAbstractFile) {
   return ['md', 'markdown'].includes(file.extension);
 }
 
+const warnedPaths = new Set<string>();
+
 export function getHeadings(file: TFile, app: App) {
-  return app.metadataCache.getFileCache(file)?.headings ?? [];
+  try {
+    const cache = app.metadataCache.getFileCache(file);
+
+    if (cache?.headings) {
+      return cache.headings;
+    }
+    return [];
+  } catch (error) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    const path = file?.path ?? '<unknown>';
+    if (!warnedPaths.has(path)) {
+      warnedPaths.add(path);
+      if (document.body.dataset.stickyHeadingsDebug === '1') {
+        console.warn('[sticky-headings] getHeadings failed:', { path, error });
+      }
+    }
+    return [];
+  }
 }
 
 export function parseMarkdown(markdown: string, app: App, view?: MarkdownView): Promise<string> {

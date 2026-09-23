@@ -135,7 +135,11 @@ export default class StickyHeadingsPlugin extends Plugin {
       try {
         this.registerEvent(
           this.app.metadataCache.on('resolve', file => {
-            this.handleResolve(file);
+            void this.handleResolve(file).catch(error => {
+              if (document.body.dataset.stickyHeadingsDebug === '1') {
+                console.warn('[sticky-headings] handleResolve rejected:', error);
+              }
+            });
           })
         );
       } catch (error) {
@@ -147,8 +151,93 @@ export default class StickyHeadingsPlugin extends Plugin {
       } catch (error) {
         console.warn('Failed to check file resolve map on load:', error);
       }
+
+      try {
+        this.registerInterval(
+          window.setInterval(() => {
+            void this.healthCheckActiveLeaf();
+          }, 5000)
+        );
+      } catch (error) {
+        console.warn('Failed to register health check interval:', error);
+      }
     } catch (error) {
       console.warn('Sticky headings plugin onload encountered an error:', error);
+    }
+  }
+
+  async healthCheckActiveLeaf() {
+    try {
+      const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+      if (!view) return;
+      const leafId = view.leaf?.id;
+      if (!leafId) return;
+
+      const item = this.fileResolveMap.get(leafId);
+      if (!item) {
+        this.initStickyHeaderComponent(view);
+        return;
+      }
+
+      const healthy =
+        view.contentEl.isConnected &&
+        (item.headingEl?.stickyHeaderComponents?.length ?? 0) > 0 &&
+        item.scrollListener != null &&
+        item.headingEl?.hasMountTargetFor(view);
+
+      if (healthy) {
+        item.watchdogRecoveries = 0;
+        item.watchdogRecoveryWindowStart = undefined;
+        return;
+      }
+
+      if (item.retryTimer || item.watchdogRecovering || item.handleUpdateInFlight) {
+        // Force-clear an in-flight guard that has been stuck for too long.
+        if (
+          item.handleUpdateInFlight &&
+          item.handleUpdateInFlightSince &&
+          Date.now() - item.handleUpdateInFlightSince > 3000
+        ) {
+          if (document.body.dataset.stickyHeadingsDebug === '1') {
+            console.warn('[sticky-headings] healthCheck clearing stuck in-flight guard', leafId);
+          }
+          item.handleUpdateInFlight = false;
+          item.handleUpdateInFlightSince = undefined;
+        } else {
+          return;
+        }
+      }
+
+      const now = Date.now();
+      if (!item.watchdogRecoveryWindowStart || now - item.watchdogRecoveryWindowStart > 60000) {
+        item.watchdogRecoveryWindowStart = now;
+        item.watchdogRecoveries = 0;
+      }
+      item.watchdogRecoveries = (item.watchdogRecoveries ?? 0) + 1;
+
+      if ((item.watchdogRecoveries ?? 0) > 5) {
+        if (document.body.dataset.stickyHeadingsDebug === '1') {
+          console.warn('[sticky-headings] healthCheck giving up on leaf', leafId);
+        }
+        return;
+      }
+
+      console.warn('[sticky-headings] healthCheck recover leaf', leafId);
+      item.watchdogRecovering = true;
+      try {
+        await this.handleComponentUpdate(view);
+      } finally {
+        item.watchdogRecovering = false;
+        // Reset recovery counters if the recovery left the leaf healthy.
+        if (item.headingEl?.stickyHeaderComponents?.length > 0 && item.scrollListener != null) {
+          item.watchdogRecoveries = 0;
+          item.watchdogRecoveryWindowStart = undefined;
+        }
+      }
+    } catch (error) {
+      if (document.body.dataset.stickyHeadingsDebug === '1') {
+        console.warn('[sticky-headings] healthCheck failed:', error);
+      }
     }
   }
 
@@ -294,11 +383,19 @@ export default class StickyHeadingsPlugin extends Plugin {
         } else {
           const item = this.fileResolveMap.get(id);
           if (item) {
-            // Tear down the previous mount + listeners bound to the now-stale DOM.
+            // Build new state first so we can swap atomically; if construction
+            // throws, the old mount/listeners remain intact.
+            const newHeadingEl = new StickyHeaderComponent(view, settings);
+            // eslint-disable-next-line @typescript-eslint/no-misused-promises
+            const newLayoutChange = this.app.workspace.on('layout-change', this.handleComponentUpdate.bind(this, view));
+
             try {
+              // Tear down the previous mount + listeners bound to the now-stale DOM.
               item.headingEl?.removeStickyHeader?.();
             } catch (e) {
-              console.warn('Failed to remove old sticky header on same-leaf file change:', e);
+              if (document.body.dataset.stickyHeadingsDebug === '1') {
+                console.warn('Failed to remove old sticky header on same-leaf file change:', e);
+              }
             }
             if (item.layoutChangeEvent) {
               this.app.workspace.offref(item.layoutChangeEvent);
@@ -330,10 +427,7 @@ export default class StickyHeadingsPlugin extends Plugin {
             item.resolveRevision++;
             item.retryCount = 0;
 
-            const newHeadingEl = new StickyHeaderComponent(view, settings);
             item.headingEl = newHeadingEl;
-            // eslint-disable-next-line @typescript-eslint/no-misused-promises
-            const newLayoutChange = this.app.workspace.on('layout-change', this.handleComponentUpdate.bind(this, view));
             item.layoutChangeEvent = newLayoutChange;
             this.registerEvent(newLayoutChange);
           }
@@ -393,22 +487,51 @@ export default class StickyHeadingsPlugin extends Plugin {
   }
 
   async handleComponentUpdate(view: MarkdownView) {
+    const { id } = view?.leaf ?? {};
+    if (!id) return;
+    const item = this.fileResolveMap.get(id);
+    if (!item) return;
+    if (item.handleUpdateInFlight) return;
+    item.handleUpdateInFlight = true;
+    item.handleUpdateInFlightSince = Date.now();
     try {
       const scroller = getScroller(view);
-      const { id } = view?.leaf ?? {};
-      if (!id) return;
-      const item = this.fileResolveMap.get(id);
-      if (!item) return;
+
+      // Always use the live file when available; item.file may be stale after swaps.
+      const liveFile = view.getFile() ?? item.file;
 
       // Refresh headings — layout changed, so offsets need recomputing
-      const headings = await this.retrieveHeadings(item.file, view);
-      if (this.fileResolveMap.get(id) !== item) return;
-      item.headings = headings;
+      const headings = await this.retrieveHeadings(liveFile, view);
+      if (this.fileResolveMap.get(id) !== item) {
+        return;
+      }
+
+      // Defensive: don't overwrite existing rendered headings with an empty result
+      // when the live file still matches the tracked file.
+      if (headings.length === 0 && item.headings.length > 0 && liveFile.path === item.file.path) {
+        if (document.body.dataset.stickyHeadingsDebug === '1') {
+          if (document.body.dataset.stickyHeadingsDebug === '1') {
+            console.warn('[sticky-headings] handleComponentUpdate preserving non-empty headings', {
+              file: liveFile.path,
+            });
+          }
+        }
+      } else {
+        item.headings = headings;
+      }
       item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, this.settings.max, this.settings.mode);
 
       // Only mount / remount after we know this async call is still the latest for the leaf.
-      if (!item.headingEl.stickyHeaderComponents?.length) {
+      const needsRemount =
+        !item.headingEl.stickyHeaderComponents?.length || !item.headingEl.hasMountTargetFor(item.view);
+      if (needsRemount) {
         item.headingEl.addStickyHeader(item.view, this.settings);
+      }
+
+      // If the mount still produced no components, schedule a scroller retry so
+      // we don't leave the leaf stuck without a sticky header.
+      if (item.headingEl.stickyHeaderComponents?.length === 0) {
+        this.scheduleScrollerRetry(id, view);
       }
 
       // Remove existing scroll listener from the element it was actually attached to
@@ -425,7 +548,9 @@ export default class StickyHeadingsPlugin extends Plugin {
       try {
         item.headingEl.updateEditMode(isEditSourceMode(item.view));
       } catch (error) {
-        console.warn('Failed to update edit mode on sticky header:', error);
+        if (document.body.dataset.stickyHeadingsDebug === '1') {
+          console.warn('Failed to update edit mode on sticky header:', error);
+        }
       }
 
       if (scroller) {
@@ -466,10 +591,15 @@ export default class StickyHeadingsPlugin extends Plugin {
         item.detectPosition = null;
         this.fileResolveMap.set(id, item);
       }
-      this.updateHeadings(item.file, item.view, item);
+      this.updateHeadings(liveFile, item.view, item);
       this.dumpDiagnostics(item.view, item);
     } catch (error) {
-      console.warn('Failed to handle component update:', error);
+      if (document.body.dataset.stickyHeadingsDebug === '1') {
+        console.warn('[sticky-headings] Failed to handle component update:', error);
+      }
+    } finally {
+      item.handleUpdateInFlight = false;
+      item.handleUpdateInFlightSince = undefined;
     }
   }
 
@@ -558,25 +688,44 @@ export default class StickyHeadingsPlugin extends Plugin {
     if (isMarkdownFile(file)) {
       const ids: string[] = [];
       for (const [id, item] of this.fileResolveMap) {
-        if (item.file.path === file.path) {
-          // Refresh headings — file content changed
-          const myRev = ++item.resolveRevision;
-          invalidateMarkdownCacheForFile(this.markdownCache, file);
-          const headings = await this.retrieveHeadings(file, item.view);
-          if (myRev !== item.resolveRevision) {
-            return;
+        try {
+          // Defensive stale-file guard: skip if the tracked file is unloaded or
+          // the live view has moved on to a different file.
+          const liveFile = item.view?.getFile?.();
+          if (!item.file || (liveFile && liveFile.path !== item.file.path)) {
+            continue;
           }
-          item.headings = headings;
-          item.getExpectedHeadings = makeExpectedHeadings(
-            () => item.headings,
-            this.settings?.max ?? defaultSettings.max,
-            this.settings?.mode ?? defaultSettings.mode
-          );
-          this.updateHeadings(file, item.view, item);
 
-          if (!item.resolve) {
-            item.resolve = true;
+          if (item.file.path === file.path) {
+            // Refresh headings — file content changed
+            const myRev = ++item.resolveRevision;
+            invalidateMarkdownCacheForFile(this.markdownCache, file);
+            const headings = await this.retrieveHeadings(file, item.view);
+            if (myRev !== item.resolveRevision) {
+              return;
+            }
+            item.headings = headings;
+            item.getExpectedHeadings = makeExpectedHeadings(
+              () => item.headings,
+              this.settings?.max ?? defaultSettings.max,
+              this.settings?.mode ?? defaultSettings.mode
+            );
+            this.updateHeadings(file, item.view, item);
+
+            if (!item.resolve) {
+              item.resolve = true;
+              ids.push(id);
+            }
+          }
+        } catch (error) {
+          if (document.body.dataset.stickyHeadingsDebug === '1') {
+            console.warn('[sticky-headings] handleResolve iteration failed:', { id, file: file.path, error });
+          }
+          try {
+            item.resolve = false;
             ids.push(id);
+          } catch {
+            // ignore
           }
         }
       }
@@ -668,8 +817,10 @@ export default class StickyHeadingsPlugin extends Plugin {
 
     if (!headings || headings.length === 0) return [];
 
-    return await Promise.all(
-      getShownHeadings(headings, view, this.settings).map(async heading => {
+    const shownHeadings = getShownHeadings(headings, view, this.settings);
+
+    const renderPromise = Promise.all(
+      shownHeadings.map(async heading => {
         const cacheKey = `${file.path}::${heading.heading}`;
         let title: string;
         if (this.markdownCache.has(cacheKey)) {
@@ -678,7 +829,9 @@ export default class StickyHeadingsPlugin extends Plugin {
           try {
             title = await parseMarkdown(heading.heading, this.app, view);
           } catch (error) {
-            console.warn('Failed to parse markdown title, falling back to raw heading:', error);
+            if (document.body.dataset.stickyHeadingsDebug === '1') {
+              console.warn('Failed to parse markdown title, falling back to raw heading:', error);
+            }
             title = heading.heading;
           }
           setCachedTitle(this.markdownCache, cacheKey, title);
@@ -689,6 +842,17 @@ export default class StickyHeadingsPlugin extends Plugin {
         };
       })
     );
+
+    const timeoutPromise = new Promise<Heading[]>(resolve => {
+      window.setTimeout(() => {
+        if (document.body.dataset.stickyHeadingsDebug === '1') {
+          console.warn('[sticky-headings] retrieveHeadings timeout', { file: file.path, count: headings.length });
+        }
+        resolve(shownHeadings.map(h => ({ ...h, title: h.heading })));
+      }, 1500);
+    });
+
+    return Promise.race([renderPromise, timeoutPromise]);
   }
 
   onSettingChanged() {
@@ -726,6 +890,9 @@ export default class StickyHeadingsPlugin extends Plugin {
           window.clearTimeout(item.retryTimer);
           item.retryTimer = undefined;
         }
+
+        item.watchdogRecoveries = 0;
+        item.watchdogRecoveryWindowStart = undefined;
 
         if (item?.view?.contentEl) {
           delete item.view.contentEl.dataset.stickyScrollCapture;
