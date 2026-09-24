@@ -15,7 +15,7 @@ import {
   parseMarkdown,
 } from './utils/obsidian';
 
-import StickyHeaderComponent from './stickyHeader';
+import StickyHeaderComponent, { resolveMountContainers } from './stickyHeader';
 import StatusBarItemComponent from './ui/statusBar/statusBarItem';
 import getShownHeadings, { trivial } from './utils/getShownHeadings';
 import { throttle } from 'lodash';
@@ -522,8 +522,10 @@ export default class StickyHeadingsPlugin extends Plugin {
       item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, this.settings.max, this.settings.mode);
 
       // Only mount / remount after we know this async call is still the latest for the leaf.
+      const currentTargets = resolveMountContainers(item.view);
       const needsRemount =
-        !item.headingEl.stickyHeaderComponents?.length || !item.headingEl.hasMountTargetFor(item.view);
+        !item.headingEl.stickyHeaderComponents?.length ||
+        (currentTargets.length > 0 && !item.headingEl.hasMountTargetFor(item.view));
       if (needsRemount) {
         item.headingEl.addStickyHeader(item.view, this.settings);
       }

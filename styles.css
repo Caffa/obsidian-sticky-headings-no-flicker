@@ -22,9 +22,9 @@ settings:
     -
         id: sticky-header-desktop-top-offset
         title: desktop header position
-        description: How far down from the top of the editor the sticky header sits on desktop. Increase to move the header down (if it overlaps the inline title); decrease to move it up.
+        description: Additional space below the top of the editor/preview container on desktop. Increase to move the header down (if it overlaps the inline title); decrease to move it up.
         type: variable-number
-        default: 24
+        default: 0
         format: px
 
     -
@@ -57,12 +57,19 @@ settings:
 :root {
   --sticky-header-indent-width: 1em;
   --sticky-header-verticle-offset: 0px;
-  --sticky-header-desktop-top-offset: 24px;
+  --sticky-header-desktop-top-offset: 0px;
   --sticky-header-mobile-top-offset: 0px;
   --sticky-header-float-background-color: #000;
   --sticky-header-float-text-color: #fff;
   --sticky-header-font-size: 12px;
   --sticky-header-line-height: 18px;
+}
+
+.markdown-source-view.sticky-headings-mount,
+.markdown-preview-view.sticky-headings-mount,
+.markdown-reading-view.sticky-headings-mount,
+.sticky-headings-mount {
+  position: relative;
 }
 
 .has-sticky-headings {

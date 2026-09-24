@@ -13,7 +13,7 @@ export const defaultSettings = {
   showInStatusBar: false,
   boundaryOffset: '0px',
   fontSize: 12,
-  desktopTopOffset: 24,
+  desktopTopOffset: 0,
   mobileTopOffset: 0,
   desktopLeftOffset: 0,
   mobileLeftOffset: 0,

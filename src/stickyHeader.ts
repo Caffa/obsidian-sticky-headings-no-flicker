@@ -19,7 +19,7 @@ function headingsEqual(a: Heading[], b: Heading[]): boolean {
 }
 
 /* eslint-disable @typescript-eslint/no-unnecessary-condition */
-function resolveMountContainers(view: MarkdownView): HTMLElement[] {
+export function resolveMountContainers(view: MarkdownView): HTMLElement[] {
   const targets: HTMLElement[] = [];
   const { contentEl } = view;
   if (!contentEl) return targets;
@@ -29,26 +29,12 @@ function resolveMountContainers(view: MarkdownView): HTMLElement[] {
   const mode = view.getMode?.();
   const isPreview = mode === 'preview';
 
-  // Prefer a single preview/reading container.
-  const previewContainer = view.previewMode?.containerEl;
-  const readingView = contentEl.querySelector<HTMLElement>('.markdown-reading-view, .markdown-preview-view');
-  const previewTarget = previewContainer ?? readingView ?? null;
-
-  // Prefer a single source/live-preview container.
-  const sourceTarget =
-    view.editMode?.editorEl ??
-    contentEl.querySelector<HTMLElement>('.markdown-source-view') ??
-    view.editMode?.containerEl ??
-    contentEl.querySelector<HTMLElement>('.cm-editor') ??
-    null;
-
   if (isPreview) {
+    const previewTarget = view.previewMode?.containerEl;
     if (previewTarget) targets.push(previewTarget);
-  } else if (sourceTarget) {
-    targets.push(sourceTarget);
-  } else if (previewTarget) {
-    // Fallback for any preview-like reading view when no source container exists.
-    targets.push(previewTarget);
+  } else {
+    const sourceTarget = view.editMode?.editorEl;
+    if (sourceTarget) targets.push(sourceTarget);
   }
 
   return targets;
@@ -79,11 +65,16 @@ export default class StickyHeaderComponent {
     const backoffs = [100, 200, 300, 400, 500, 750, 1000, 1500];
     let count = 0;
     const tryMount = () => {
+      count++;
       if (!view.contentEl.isConnected) {
+        if (count >= backoffs.length) {
+          console.warn('[sticky-headings] contentEl never reconnected; giving up', { path: view.file?.path });
+          this.mountRetryTimer = undefined;
+          return;
+        }
         this.mountRetryTimer = window.setTimeout(tryMount, backoffs[Math.min(count, backoffs.length - 1)]);
         return;
       }
-      count++;
       const targets = resolveMountContainers(view);
       if (targets.length > 0) {
         this.mountTargetsInternal(view, settings, targets);
@@ -92,13 +83,6 @@ export default class StickyHeaderComponent {
       }
       console.warn('[sticky-headings] mount target missing, retry', count);
       if (count >= backoffs.length) {
-        // Last resort: try resolveMountContainers one more time, then fall back to contentEl
-        const finalTargets = resolveMountContainers(view);
-        if (finalTargets.length > 0) {
-          this.mountTargetsInternal(view, settings, finalTargets);
-          this.mountRetryTimer = undefined;
-          return;
-        }
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- defensive: view may be disconnected on mobile
         if (view.contentEl.isConnected) {
           console.warn('[sticky-headings] using contentEl as last-resort mount target', { path: view.file?.path });
@@ -141,6 +125,7 @@ export default class StickyHeaderComponent {
 
     this.stickyHeaderComponents = components;
     this.mountTargets = targets;
+    targets.forEach(target => target.addClass('sticky-headings-mount'));
     view.contentEl.addClass('has-sticky-headings');
   }
 
@@ -172,6 +157,7 @@ export default class StickyHeaderComponent {
     this.stickyHeaderComponents.forEach(conponent => conponent.$destroy());
     this.stickyHeaderComponents = [];
     this.mountTargets.forEach(target => {
+      target.removeClass('sticky-headings-mount');
       if (this.fallbackTargets.has(target) && target.parentNode) {
         target.parentNode.removeChild(target);
         this.fallbackTargets.delete(target);

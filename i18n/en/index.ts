@@ -44,7 +44,8 @@ const en: BaseTranslation = {
     },
     desktopTopOffset: {
       title: 'Desktop header position',
-      description: 'How far down from the editor top the sticky header sits on desktop (pixels).',
+      description:
+        'Additional space below the top of the editor/preview container on desktop (pixels). The header is positioned relative to the editor container, not the whole pane.',
     },
     mobileTopOffset: {
       title: 'Mobile header position',
