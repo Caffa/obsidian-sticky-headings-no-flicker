@@ -1,7 +1,7 @@
 <svelte:options accessors={true} />
 
 <script lang="ts">
-  import { getIcon, MarkdownView } from 'obsidian';
+  import { getIcon, MarkdownView, Platform } from 'obsidian';
   import type { Heading, ISetting } from '../types';
   import { onMount, tick } from 'svelte';
   import { getScroller } from 'src/utils/obsidian';
@@ -23,7 +23,8 @@
 
   $: fontSizeStyle = settings.fontSize ? `${settings.fontSize}px` : '12px';
   $: lineHeightStyle = settings.fontSize ? `${Math.round(settings.fontSize * 1.5)}px` : '18px';
-  $: rootStyles = `--sticky-header-font-size:${fontSizeStyle};--sticky-header-line-height:${lineHeightStyle};`;
+  $: topOffset = Platform.isMobile ? settings.mobileTopOffset : settings.desktopTopOffset;
+  $: rootStyles = `--sticky-header-font-size:${fontSizeStyle};--sticky-header-line-height:${lineHeightStyle};top:${topOffset}px;`;
 
   let filename = file?.basename ?? '';
   $: filename = file?.basename ?? '';
@@ -170,6 +171,8 @@
     height: fit-content;
     overflow: hidden;
     position: absolute;
+    /* top is set via the inline style attribute so it reacts immediately when
+       the plugin setting changes (Style Settings variables require reload). */
     top: var(--sticky-header-desktop-top-offset, 0px);
     /* Only as wide as the heading text so the inline title can show through
        on the rest of the line. */

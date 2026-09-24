@@ -42,6 +42,14 @@ const en: BaseTranslation = {
       description:
         'Distance from the top boundary of the note display area where headings will start to stick (in pixels or %)',
     },
+    desktopTopOffset: {
+      title: 'Desktop header position',
+      description: 'How far down from the editor top the sticky header sits on desktop (pixels).',
+    },
+    mobileTopOffset: {
+      title: 'Mobile header position',
+      description: 'How far down from the editor top the sticky header sits on mobile (pixels).',
+    },
   },
 };
 

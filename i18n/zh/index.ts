@@ -40,6 +40,14 @@ const zh: Translation = {
       title: '触发偏移',
       description: '距离文档显示区域顶部多远时，标题开始粘滞。支持 px 和 % 两种单位。',
     },
+    desktopTopOffset: {
+      title: '桌面端标题位置',
+      description: '桌面端粘性标题距离编辑器顶部的距离（像素）。',
+    },
+    mobileTopOffset: {
+      title: '移动端标题位置',
+      description: '移动端粘性标题距离编辑器顶部的距离（像素）。',
+    },
   },
 };
 

@@ -13,6 +13,8 @@ export const defaultSettings = {
   showInStatusBar: false,
   boundaryOffset: '0px',
   fontSize: 12,
+  desktopTopOffset: 24,
+  mobileTopOffset: 0,
 } satisfies ISetting;
 
 interface IStickyHeadingsPlugin extends Plugin {
@@ -83,6 +85,34 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
             this.update({
               ...this.plugin.settings,
               fontSize: value,
+            });
+          });
+        });
+      new Setting(containerEl)
+        .setName(L.setting.desktopTopOffset.title())
+        .setDesc(L.setting.desktopTopOffset.description())
+        .addSlider(slider => {
+          slider.setLimits(0, 100, 1);
+          slider.setDynamicTooltip();
+          slider.setValue(settings.desktopTopOffset);
+          slider.onChange(value => {
+            this.update({
+              ...this.plugin.settings,
+              desktopTopOffset: value,
+            });
+          });
+        });
+      new Setting(containerEl)
+        .setName(L.setting.mobileTopOffset.title())
+        .setDesc(L.setting.mobileTopOffset.description())
+        .addSlider(slider => {
+          slider.setLimits(0, 100, 1);
+          slider.setDynamicTooltip();
+          slider.setValue(settings.mobileTopOffset);
+          slider.onChange(value => {
+            this.update({
+              ...this.plugin.settings,
+              mobileTopOffset: value,
             });
           });
         });

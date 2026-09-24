@@ -11,6 +11,8 @@ export interface ISetting {
   showInStatusBar: boolean;
   boundaryOffset: string;
   fontSize: number;
+  desktopTopOffset: number;
+  mobileTopOffset: number;
 }
 
 export interface FileResolveEntry {

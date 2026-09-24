@@ -115,6 +115,26 @@ type RootTranslation = {
 			 */
 			description: string
 		}
+		desktopTopOffset: {
+			/**
+			 * D​e​s​k​t​o​p​ ​h​e​a​d​e​r​ ​p​o​s​i​t​i​o​n
+			 */
+			title: string
+			/**
+			 * H​o​w​ ​f​a​r​ ​d​o​w​n​ ​f​r​o​m​ ​t​h​e​ ​e​d​i​t​o​r​ ​t​o​p​ ​t​h​e​ ​s​t​i​c​k​y​ ​h​e​a​d​e​r​ ​s​i​t​s​ ​o​n​ ​d​e​s​k​t​o​p​ ​(​p​i​x​e​l​s​)​.
+			 */
+			description: string
+		}
+		mobileTopOffset: {
+			/**
+			 * M​o​b​i​l​e​ ​h​e​a​d​e​r​ ​p​o​s​i​t​i​o​n
+			 */
+			title: string
+			/**
+			 * H​o​w​ ​f​a​r​ ​d​o​w​n​ ​f​r​o​m​ ​t​h​e​ ​e​d​i​t​o​r​ ​t​o​p​ ​t​h​e​ ​s​t​i​c​k​y​ ​h​e​a​d​e​r​ ​s​i​t​s​ ​o​n​ ​m​o​b​i​l​e​ ​(​p​i​x​e​l​s​)​.
+			 */
+			description: string
+		}
 	}
 }
 
@@ -217,6 +237,26 @@ export type TranslationFunctions = {
 			title: () => LocalizedString
 			/**
 			 * Distance from the top boundary of the note display area where headings will start to stick (in pixels or %)
+			 */
+			description: () => LocalizedString
+		}
+		desktopTopOffset: {
+			/**
+			 * Desktop header position
+			 */
+			title: () => LocalizedString
+			/**
+			 * How far down from the editor top the sticky header sits on desktop (pixels).
+			 */
+			description: () => LocalizedString
+		}
+		mobileTopOffset: {
+			/**
+			 * Mobile header position
+			 */
+			title: () => LocalizedString
+			/**
+			 * How far down from the editor top the sticky header sits on mobile (pixels).
 			 */
 			description: () => LocalizedString
 		}
