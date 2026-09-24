@@ -32,51 +32,80 @@
   // Distance from the top of the mount container to the start of actual note
   // content, so the sticky header does not overlap Obsidian's inline title.
   let inlineTitleTopOffset = 0;
+  let lastMeasuredInlineTitle: HTMLElement | null = null;
+  let inlineTitleResizeObserver: ResizeObserver | null = null;
 
   const iconCache: Record<string, string> = {};
   const getIconHtml = (name: string) => (iconCache[name] ??= getIcon(name)?.outerHTML ?? '');
+
+  function setInlineTitleOffset(value: number) {
+    inlineTitleTopOffset = Math.max(0, Math.round(value));
+  }
+
+  function observeInlineTitle(el: HTMLElement) {
+    if (lastMeasuredInlineTitle === el && inlineTitleResizeObserver) return;
+    inlineTitleResizeObserver?.disconnect();
+    lastMeasuredInlineTitle = el;
+    inlineTitleResizeObserver = new ResizeObserver(() => measureInlineTitleOffset());
+    inlineTitleResizeObserver.observe(el);
+  }
 
   function measureInlineTitleOffset() {
     // Only apply the inline-title offset on desktop. On mobile the previous
     // hardcoded top: 0 keeps the bar in the right place.
     if (Platform.isMobile) {
-      inlineTitleTopOffset = 0;
+      setInlineTitleOffset(0);
       return;
     }
     try {
       const scroller = getScroller(view);
-      const root = main?.parentElement ?? shadow?.parentElement;
-      if (!root) return;
-      // Obsidian renders the inline title inside the scroller/editor area.
-      const inlineTitle =
-        scroller?.querySelector<HTMLElement>('.inline-title') ??
-        root.querySelector<HTMLElement>('.inline-title') ??
-        view?.contentEl?.querySelector<HTMLElement>('.inline-title');
+      if (!scroller) return;
+      // The active inline title is inside the active scroller. Avoid fallbacks
+      // to hidden containers (source vs preview in live preview) because their
+      // rects are stale/zero when not active.
+      const inlineTitle = scroller.querySelector<HTMLElement>('.inline-title');
       if (!inlineTitle) {
-        inlineTitleTopOffset = 0;
+        setInlineTitleOffset(0);
+        inlineTitleResizeObserver?.disconnect();
+        lastMeasuredInlineTitle = null;
         return;
       }
-      const rootRect = root.getBoundingClientRect();
+      const scrollerRect = scroller.getBoundingClientRect();
       const titleRect = inlineTitle.getBoundingClientRect();
-      // Offset = bottom of inline title relative to the top of our mount root.
-      inlineTitleTopOffset = Math.max(0, Math.round(titleRect.bottom - rootRect.top));
+      // If the view is hidden (tab switch, window not focused), rects are 0
+      // and the old value is more trustworthy than 0.
+      if (scrollerRect.width === 0 || scrollerRect.height === 0 || titleRect.width === 0 || titleRect.height === 0) {
+        return;
+      }
+      // Convert the title's viewport-relative bottom to a scroll-independent
+      // content coordinate so the offset stays correct after scrolling.
+      const offset = titleRect.bottom - scrollerRect.top + (scroller.scrollTop || 0);
+      setInlineTitleOffset(offset);
+      observeInlineTitle(inlineTitle);
     } catch {
-      inlineTitleTopOffset = 0;
+      setInlineTitleOffset(0);
     }
   }
 
   onMount(() => {
     console.debug('mounted svelte component');
-    measureInlineTitleOffset();
+    // Defer until layout is settled; this also avoids measuring while a tab is
+    // still hidden during a layout change.
+    requestAnimationFrame(() => measureInlineTitleOffset());
   });
 
   onDestroy(() => {
     console.debug('destroyed');
+    inlineTitleResizeObserver?.disconnect();
+    inlineTitleResizeObserver = null;
+    lastMeasuredInlineTitle = null;
   });
 
   // Re-measure when the view or file changes (inline title may appear/disappear).
   $: if (view || file) {
-    measureInlineTitleOffset();
+    if (typeof window !== 'undefined') {
+      requestAnimationFrame(() => measureInlineTitleOffset());
+    }
   }
 
   const calculateExpectedHeight = async (index: number) => {
