@@ -1,7 +1,7 @@
 <svelte:options accessors={true} />
 
 <script lang="ts">
-  import { getIcon, MarkdownView } from 'obsidian';
+  import { getIcon, MarkdownView, Platform } from 'obsidian';
   import type { Heading, ISetting } from '../types';
   import { onDestroy, onMount, tick } from 'svelte';
   import { getScroller } from 'src/utils/obsidian';
@@ -37,6 +37,12 @@
   const getIconHtml = (name: string) => (iconCache[name] ??= getIcon(name)?.outerHTML ?? '');
 
   function measureInlineTitleOffset() {
+    // Only apply the inline-title offset on desktop. On mobile the previous
+    // hardcoded top: 0 keeps the bar in the right place.
+    if (Platform.isMobile) {
+      inlineTitleTopOffset = 0;
+      return;
+    }
     try {
       const scroller = getScroller(view);
       const root = main?.parentElement ?? shadow?.parentElement;
@@ -216,7 +222,7 @@
 
   :global(.is-mobile) .sticky-headings-root,
   :global(.is-phone) .sticky-headings-root {
-    top: var(--sticky-header-top-offset, 0);
+    top: 0;
     padding-top: var(--sticky-header-verticle-offset);
   }
 
