@@ -23,22 +23,55 @@
 
   $: fontSizeStyle = settings.fontSize ? `${settings.fontSize}px` : '12px';
   $: lineHeightStyle = settings.fontSize ? `${Math.round(settings.fontSize * 1.5)}px` : '18px';
-  $: rootStyles = `--sticky-header-font-size:${fontSizeStyle};--sticky-header-line-height:${lineHeightStyle};`;
+  $: rootStyles = `--sticky-header-font-size:${fontSizeStyle};--sticky-header-line-height:${lineHeightStyle};--sticky-header-top-offset:${inlineTitleTopOffset}px;`;
 
   let filename = file?.basename ?? '';
   $: filename = file?.basename ?? '';
   export const showIcons: boolean = true;
 
+  // Distance from the top of the mount container to the start of actual note
+  // content, so the sticky header does not overlap Obsidian's inline title.
+  let inlineTitleTopOffset = 0;
+
   const iconCache: Record<string, string> = {};
   const getIconHtml = (name: string) => (iconCache[name] ??= getIcon(name)?.outerHTML ?? '');
 
+  function measureInlineTitleOffset() {
+    try {
+      const scroller = getScroller(view);
+      const root = main?.parentElement ?? shadow?.parentElement;
+      if (!root) return;
+      // Obsidian renders the inline title inside the scroller/editor area.
+      const inlineTitle =
+        scroller?.querySelector<HTMLElement>('.inline-title') ??
+        root.querySelector<HTMLElement>('.inline-title') ??
+        view?.contentEl?.querySelector<HTMLElement>('.inline-title');
+      if (!inlineTitle) {
+        inlineTitleTopOffset = 0;
+        return;
+      }
+      const rootRect = root.getBoundingClientRect();
+      const titleRect = inlineTitle.getBoundingClientRect();
+      // Offset = bottom of inline title relative to the top of our mount root.
+      inlineTitleTopOffset = Math.max(0, Math.round(titleRect.bottom - rootRect.top));
+    } catch {
+      inlineTitleTopOffset = 0;
+    }
+  }
+
   onMount(() => {
     console.debug('mounted svelte component');
+    measureInlineTitleOffset();
   });
 
   onDestroy(() => {
     console.debug('destroyed');
   });
+
+  // Re-measure when the view or file changes (inline title may appear/disappear).
+  $: if (view || file) {
+    measureInlineTitleOffset();
+  }
 
   const calculateExpectedHeight = async (index: number) => {
     expectedHeadings = getExpectedHeadings(index);
@@ -174,7 +207,7 @@
     height: fit-content;
     overflow: hidden;
     position: absolute;
-    top: 0;
+    top: var(--sticky-header-top-offset, 0);
     width: 100%;
     padding: 0 var(--file-margins);
     z-index: 1;
@@ -183,7 +216,7 @@
 
   :global(.is-mobile) .sticky-headings-root,
   :global(.is-phone) .sticky-headings-root {
-    top: 0;
+    top: var(--sticky-header-top-offset, 0);
     padding-top: var(--sticky-header-verticle-offset);
   }
 
