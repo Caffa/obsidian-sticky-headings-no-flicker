@@ -142,6 +142,10 @@ export default class StickyHeaderComponent {
     this.stickyHeaderComponents = components;
     this.mountTargets = targets;
     view.contentEl.addClass('has-sticky-headings');
+    // Make each mount target the positioning context for its sticky header.
+    // This aligns the CSS top offset with the inline-title measurement in
+    // StickyHeader.svelte, which is relative to the mount target.
+    targets.forEach(target => target.addClass('sticky-headings-mount'));
   }
 
   addStickyHeader(view: MarkdownView, settings: ISetting | undefined) {
@@ -172,6 +176,7 @@ export default class StickyHeaderComponent {
     this.stickyHeaderComponents.forEach(conponent => conponent.$destroy());
     this.stickyHeaderComponents = [];
     this.mountTargets.forEach(target => {
+      target.removeClass('sticky-headings-mount');
       if (this.fallbackTargets.has(target) && target.parentNode) {
         target.parentNode.removeChild(target);
         this.fallbackTargets.delete(target);
