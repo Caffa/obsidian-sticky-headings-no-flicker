@@ -15,6 +15,8 @@ export const defaultSettings = {
   fontSize: 12,
   desktopTopOffset: 24,
   mobileTopOffset: 0,
+  desktopLeftOffset: 0,
+  mobileLeftOffset: 0,
 } satisfies ISetting;
 
 interface IStickyHeadingsPlugin extends Plugin {
@@ -113,6 +115,34 @@ export default class StickyHeadingsSetting extends PluginSettingTab {
             this.update({
               ...this.plugin.settings,
               mobileTopOffset: value,
+            });
+          });
+        });
+      new Setting(containerEl)
+        .setName(L.setting.desktopLeftOffset.title())
+        .setDesc(L.setting.desktopLeftOffset.description())
+        .addSlider(slider => {
+          slider.setLimits(0, 200, 1);
+          slider.setDynamicTooltip();
+          slider.setValue(settings.desktopLeftOffset);
+          slider.onChange(value => {
+            this.update({
+              ...this.plugin.settings,
+              desktopLeftOffset: value,
+            });
+          });
+        });
+      new Setting(containerEl)
+        .setName(L.setting.mobileLeftOffset.title())
+        .setDesc(L.setting.mobileLeftOffset.description())
+        .addSlider(slider => {
+          slider.setLimits(0, 200, 1);
+          slider.setDynamicTooltip();
+          slider.setValue(settings.mobileLeftOffset);
+          slider.onChange(value => {
+            this.update({
+              ...this.plugin.settings,
+              mobileLeftOffset: value,
             });
           });
         });

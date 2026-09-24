@@ -48,6 +48,14 @@ const zh: Translation = {
       title: '移动端标题位置',
       description: '移动端粘性标题距离编辑器顶部的距离（像素）。',
     },
+    desktopLeftOffset: {
+      title: '桌面端标题左边距',
+      description: '桌面端粘性标题距离左边缘的距离（像素）。增大此值可避免覆盖导航按钮。',
+    },
+    mobileLeftOffset: {
+      title: '移动端标题左边距',
+      description: '移动端粘性标题距离左边缘的距离（像素）。',
+    },
   },
 };
 

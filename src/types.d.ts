@@ -13,6 +13,8 @@ export interface ISetting {
   fontSize: number;
   desktopTopOffset: number;
   mobileTopOffset: number;
+  desktopLeftOffset: number;
+  mobileLeftOffset: number;
 }
 
 export interface FileResolveEntry {

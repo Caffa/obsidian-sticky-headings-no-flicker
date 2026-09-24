@@ -135,6 +135,26 @@ type RootTranslation = {
 			 */
 			description: string
 		}
+		desktopLeftOffset: {
+			/**
+			 * D​e​s​k​t​o​p​ ​h​e​a​d​e​r​ ​l​e​f​t​ ​o​f​f​s​e​t
+			 */
+			title: string
+			/**
+			 * H​o​w​ ​f​a​r​ ​f​r​o​m​ ​t​h​e​ ​l​e​f​t​ ​e​d​g​e​ ​t​h​e​ ​s​t​i​c​k​y​ ​h​e​a​d​e​r​ ​s​i​t​s​ ​o​n​ ​d​e​s​k​t​o​p​ ​(​p​i​x​e​l​s​)​.​ ​I​n​c​r​e​a​s​e​ ​t​o​ ​a​v​o​i​d​ ​c​o​v​e​r​i​n​g​ ​n​a​v​i​g​a​t​i​o​n​ ​b​u​t​t​o​n​s​.
+			 */
+			description: string
+		}
+		mobileLeftOffset: {
+			/**
+			 * M​o​b​i​l​e​ ​h​e​a​d​e​r​ ​l​e​f​t​ ​o​f​f​s​e​t
+			 */
+			title: string
+			/**
+			 * H​o​w​ ​f​a​r​ ​f​r​o​m​ ​t​h​e​ ​l​e​f​t​ ​e​d​g​e​ ​t​h​e​ ​s​t​i​c​k​y​ ​h​e​a​d​e​r​ ​s​i​t​s​ ​o​n​ ​m​o​b​i​l​e​ ​(​p​i​x​e​l​s​)​.
+			 */
+			description: string
+		}
 	}
 }
 
@@ -257,6 +277,26 @@ export type TranslationFunctions = {
 			title: () => LocalizedString
 			/**
 			 * How far down from the editor top the sticky header sits on mobile (pixels).
+			 */
+			description: () => LocalizedString
+		}
+		desktopLeftOffset: {
+			/**
+			 * Desktop header left offset
+			 */
+			title: () => LocalizedString
+			/**
+			 * How far from the left edge the sticky header sits on desktop (pixels). Increase to avoid covering navigation buttons.
+			 */
+			description: () => LocalizedString
+		}
+		mobileLeftOffset: {
+			/**
+			 * Mobile header left offset
+			 */
+			title: () => LocalizedString
+			/**
+			 * How far from the left edge the sticky header sits on mobile (pixels).
 			 */
 			description: () => LocalizedString
 		}

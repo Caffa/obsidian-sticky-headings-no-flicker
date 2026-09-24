@@ -24,7 +24,8 @@
   $: fontSizeStyle = settings.fontSize ? `${settings.fontSize}px` : '12px';
   $: lineHeightStyle = settings.fontSize ? `${Math.round(settings.fontSize * 1.5)}px` : '18px';
   $: topOffset = Platform.isMobile ? settings.mobileTopOffset : settings.desktopTopOffset;
-  $: rootStyles = `--sticky-header-font-size:${fontSizeStyle};--sticky-header-line-height:${lineHeightStyle};top:${topOffset}px;`;
+  $: leftOffset = Platform.isMobile ? settings.mobileLeftOffset : settings.desktopLeftOffset;
+  $: rootStyles = `--sticky-header-font-size:${fontSizeStyle};--sticky-header-line-height:${lineHeightStyle};top:${topOffset}px;left:${leftOffset}px;`;
 
   let filename = file?.basename ?? '';
   $: filename = file?.basename ?? '';

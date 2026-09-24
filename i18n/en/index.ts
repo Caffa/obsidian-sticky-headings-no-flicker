@@ -50,6 +50,15 @@ const en: BaseTranslation = {
       title: 'Mobile header position',
       description: 'How far down from the editor top the sticky header sits on mobile (pixels).',
     },
+    desktopLeftOffset: {
+      title: 'Desktop header left offset',
+      description:
+        'How far from the left edge the sticky header sits on desktop (pixels). Increase to avoid covering navigation buttons.',
+    },
+    mobileLeftOffset: {
+      title: 'Mobile header left offset',
+      description: 'How far from the left edge the sticky header sits on mobile (pixels).',
+    },
   },
 };
 
