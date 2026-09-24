@@ -176,8 +176,9 @@
     width: fit-content;
     max-width: min(var(--file-line-width), var(--max-width));
     padding: 0 var(--file-margins);
-    /* Sit behind the inline title so descenders/accents remain visible. */
-    z-index: 0;
+    /* Above editor content but narrow enough that the inline title shows
+       on either side / behind overlapping character descenders. */
+    z-index: 1;
     padding-top: var(--sticky-header-verticle-offset);
   }
 
