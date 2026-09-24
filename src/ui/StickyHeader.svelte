@@ -170,10 +170,16 @@
     height: fit-content;
     overflow: hidden;
     position: absolute;
+    top: var(--sticky-header-desktop-top-offset, 0px);
     width: 100%;
     padding: 0 var(--file-margins);
     z-index: 1;
     padding-top: var(--sticky-header-verticle-offset);
+  }
+
+  :global(.is-mobile) .sticky-headings-root,
+  :global(.is-phone) .sticky-headings-root {
+    top: var(--sticky-header-mobile-top-offset, 0px);
   }
 
   .sticky-headings-item {

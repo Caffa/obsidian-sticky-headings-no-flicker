@@ -13,24 +13,24 @@ settings:
 
     -
         id: sticky-header-verticle-offset
-        title: verticle offset
-        description: The verticle offset in px units
+        title: vertical padding offset
+        description: Extra padding inside the sticky header. Does not move the header's position; use desktop/mobile top offset for that.
         type: variable-number
         default: 0
         format: px
 
     -
         id: sticky-header-desktop-top-offset
-        title: desktop top offset
-        description: Space between the top of the editor and the sticky header on desktop. Increase if the header overlaps Obsidian's inline title; decrease if there's a gap.
+        title: desktop header position
+        description: How far down from the top of the editor the sticky header sits on desktop. Increase to move the header down (if it overlaps the inline title); decrease to move it up.
         type: variable-number
         default: 24
         format: px
 
     -
         id: sticky-header-mobile-top-offset
-        title: mobile top offset
-        description: Space between the top of the editor and the sticky header on mobile.
+        title: mobile header position
+        description: How far down from the top of the editor the sticky header sits on mobile. Usually left at 0.
         type: variable-number
         default: 0
         format: px
@@ -75,12 +75,7 @@ settings:
   }
 }
 
-  .sticky-headings-root {
-    top: var(--sticky-header-desktop-top-offset, 0px);
-  }
-
   .is-mobile .sticky-headings-root,
   .is-phone .sticky-headings-root {
-    top: var(--sticky-header-mobile-top-offset, 0px);
     padding-top: var(--sticky-header-verticle-offset);
   }
