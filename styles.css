@@ -20,6 +20,22 @@ settings:
         format: px
 
     -
+        id: sticky-header-desktop-top-offset
+        title: desktop top offset
+        description: Space between the top of the editor and the sticky header on desktop. Increase if the header overlaps Obsidian's inline title.
+        type: variable-number
+        default: 40
+        format: px
+
+    -
+        id: sticky-header-mobile-top-offset
+        title: mobile top offset
+        description: Space between the top of the editor and the sticky header on mobile.
+        type: variable-number
+        default: 0
+        format: px
+
+    -
         id: sticky-header-float-background-color
         title: float theme background color
         description: The float theme background color
@@ -41,6 +57,8 @@ settings:
 :root {
   --sticky-header-indent-width: 1em;
   --sticky-header-verticle-offset: 0px;
+  --sticky-header-desktop-top-offset: 40px;
+  --sticky-header-mobile-top-offset: 0px;
   --sticky-header-float-background-color: #000;
   --sticky-header-float-text-color: #fff;
   --sticky-header-font-size: 12px;
@@ -51,20 +69,18 @@ settings:
   position: relative;
 }
 
-/* The mount target is the positioning context for each sticky header,
-   matching the offset measurement in StickyHeader.svelte. */
-.sticky-headings-mount {
-  position: relative;
-}
-
 @media (max-width: 600px) {
   .sticky-headings-theme-float.sticky-headings-root {
     padding: 10px 4%;
   }
 }
 
-.is-mobile .sticky-headings-root,
-.is-phone .sticky-headings-root {
-  top: 0;
-  padding-top: var(--sticky-header-verticle-offset);
-}
+  .sticky-headings-root {
+    top: var(--sticky-header-desktop-top-offset, 0px);
+  }
+
+  .is-mobile .sticky-headings-root,
+  .is-phone .sticky-headings-root {
+    top: var(--sticky-header-mobile-top-offset, 0px);
+    padding-top: var(--sticky-header-verticle-offset);
+  }
