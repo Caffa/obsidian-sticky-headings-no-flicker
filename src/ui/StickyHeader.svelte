@@ -171,9 +171,13 @@
     overflow: hidden;
     position: absolute;
     top: var(--sticky-header-desktop-top-offset, 0px);
-    width: 100%;
+    /* Only as wide as the heading text so the inline title can show through
+       on the rest of the line. */
+    width: fit-content;
+    max-width: min(var(--file-line-width), var(--max-width));
     padding: 0 var(--file-margins);
-    z-index: 1;
+    /* Sit behind the inline title so descenders/accents remain visible. */
+    z-index: 0;
     padding-top: var(--sticky-header-verticle-offset);
   }
 
@@ -190,6 +194,10 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     cursor: var(--cursor-link);
+    width: fit-content;
+    /* Each item carries its own background so the header is only opaque
+       behind the actual text, not the full editor width. */
+    background-color: var(--background-primary);
   }
 
   .sticky-headings-item :global(p) {
@@ -230,10 +238,6 @@
 
   .sticky-headings-item[data-indent-level='6'] {
     padding-left: calc(var(--sticky-header-indent-width) * 6);
-  }
-
-  .sticky-headings-theme-flat .sticky-headings-container {
-    background-color: var(--background-primary);
   }
 
   .sticky-headings-theme-blur .sticky-headings-container {
