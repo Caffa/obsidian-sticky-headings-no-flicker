@@ -172,9 +172,9 @@
     height: fit-content;
     overflow: hidden;
     position: absolute;
-    /* top is set via the inline style attribute so it reacts immediately when
-       the plugin setting changes (Style Settings variables require reload). */
-    top: var(--sticky-header-desktop-top-offset, 0px);
+    /* top and left are set via the inline style attribute so they react
+       immediately when plugin settings change (Style Settings variables
+       require a reload). */
     /* Only as wide as the heading text so the inline title can show through
        on the rest of the line. */
     width: fit-content;
@@ -184,11 +184,6 @@
        on either side / behind overlapping character descenders. */
     z-index: 1;
     padding-top: var(--sticky-header-verticle-offset);
-  }
-
-  :global(.is-mobile) .sticky-headings-root,
-  :global(.is-phone) .sticky-headings-root {
-    top: var(--sticky-header-mobile-top-offset, 0px);
   }
 
   .sticky-headings-item {
