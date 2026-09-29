@@ -383,14 +383,10 @@ export default class StickyHeadingsPlugin extends Plugin {
         } else {
           const item = this.fileResolveMap.get(id);
           if (item) {
-            // Build new state first so we can swap atomically; if construction
-            // throws, the old mount/listeners remain intact.
-            const newHeadingEl = new StickyHeaderComponent(view, settings);
-            // eslint-disable-next-line @typescript-eslint/no-misused-promises
-            const newLayoutChange = this.app.workspace.on('layout-change', this.handleComponentUpdate.bind(this, view));
-
+            // Tear down the previous mount + listeners bound to the now-stale DOM
+            // before constructing the new component. This prevents the ref count
+            // from dropping to 0 when both components share the same target.
             try {
-              // Tear down the previous mount + listeners bound to the now-stale DOM.
               item.headingEl?.removeStickyHeader?.();
             } catch (e) {
               if (document.body.dataset.stickyHeadingsDebug === '1') {
@@ -415,6 +411,12 @@ export default class StickyHeadingsPlugin extends Plugin {
               window.clearTimeout(item.retryTimer);
               item.retryTimer = undefined;
             }
+
+            // Build new state after old teardown so shared DOM targets keep
+            // their positioning-context classes throughout the swap.
+            const newHeadingEl = new StickyHeaderComponent(view, settings);
+            // eslint-disable-next-line @typescript-eslint/no-misused-promises
+            const newLayoutChange = this.app.workspace.on('layout-change', this.handleComponentUpdate.bind(this, view));
 
             // Rebind everything to the (reused) view with the new file.
             item.view = view;
@@ -523,9 +525,15 @@ export default class StickyHeadingsPlugin extends Plugin {
 
       // Only mount / remount after we know this async call is still the latest for the leaf.
       const currentTargets = resolveMountContainers(item.view);
+      const mountContextLost =
+        currentTargets.length > 0 &&
+        currentTargets.some(
+          target => !target.hasClass('sticky-headings-mount') || !item.view.contentEl.hasClass('has-sticky-headings')
+        );
       const needsRemount =
         !item.headingEl.stickyHeaderComponents?.length ||
-        (currentTargets.length > 0 && !item.headingEl.hasMountTargetFor(item.view));
+        (currentTargets.length > 0 && !item.headingEl.hasMountTargetFor(item.view)) ||
+        mountContextLost;
       if (needsRemount) {
         item.headingEl.addStickyHeader(item.view, this.settings);
       }

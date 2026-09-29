@@ -41,6 +41,23 @@ export function resolveMountContainers(view: MarkdownView): HTMLElement[] {
 }
 /* eslint-enable @typescript-eslint/no-unnecessary-condition */
 
+const mountClassRefs = new WeakMap<HTMLElement, number>();
+const contentClassRefs = new WeakMap<HTMLElement, number>();
+
+function incrementRef(refs: WeakMap<HTMLElement, number>, el: HTMLElement) {
+  refs.set(el, (refs.get(el) ?? 0) + 1);
+}
+
+function decrementRef(refs: WeakMap<HTMLElement, number>, el: HTMLElement) {
+  const count = (refs.get(el) ?? 0) - 1;
+  if (count <= 0) {
+    refs.delete(el);
+    return true;
+  }
+  refs.set(el, count);
+  return false;
+}
+
 export default class StickyHeaderComponent {
   stickyHeaderComponents: StickyHeader[] = [];
   mountTargets: HTMLElement[] = [];
@@ -125,7 +142,11 @@ export default class StickyHeaderComponent {
 
     this.stickyHeaderComponents = components;
     this.mountTargets = targets;
-    targets.forEach(target => target.addClass('sticky-headings-mount'));
+    targets.forEach(target => {
+      incrementRef(mountClassRefs, target);
+      target.addClass('sticky-headings-mount');
+    });
+    incrementRef(contentClassRefs, view.contentEl);
     view.contentEl.addClass('has-sticky-headings');
   }
 
@@ -157,7 +178,9 @@ export default class StickyHeaderComponent {
     this.stickyHeaderComponents.forEach(conponent => conponent.$destroy());
     this.stickyHeaderComponents = [];
     this.mountTargets.forEach(target => {
-      target.removeClass('sticky-headings-mount');
+      if (decrementRef(mountClassRefs, target)) {
+        target.removeClass('sticky-headings-mount');
+      }
       if (this.fallbackTargets.has(target) && target.parentNode) {
         target.parentNode.removeChild(target);
         this.fallbackTargets.delete(target);
@@ -166,7 +189,9 @@ export default class StickyHeaderComponent {
     this.mountTargets = [];
     this.lastFile = undefined;
     if (this.lastView) {
-      this.lastView.contentEl.removeClass('has-sticky-headings');
+      if (decrementRef(contentClassRefs, this.lastView.contentEl)) {
+        this.lastView.contentEl.removeClass('has-sticky-headings');
+      }
     }
     this.lastView = null;
   }
