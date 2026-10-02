@@ -45,11 +45,12 @@ const en: BaseTranslation = {
     desktopTopOffset: {
       title: 'Desktop header position',
       description:
-        'Additional space below the top of the editor/preview container on desktop (pixels). The header is positioned relative to the editor container, not the whole pane.',
+        'Extra distance below the top of the content area. The header automatically aligns below the tab/toolbar on each device; use this only for fine-tuning.',
     },
     mobileTopOffset: {
       title: 'Mobile header position',
-      description: 'How far down from the editor top the sticky header sits on mobile (pixels).',
+      description:
+        'Extra distance below the top of the content area. The header automatically aligns below the tab/toolbar on each device; use this only for fine-tuning.',
     },
     desktopLeftOffset: {
       title: 'Desktop header left offset',

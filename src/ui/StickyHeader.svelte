@@ -3,10 +3,11 @@
 <script lang="ts">
   import { getIcon, MarkdownView, Platform } from 'obsidian';
   import type { Heading, ISetting } from '../types';
-  import { onMount, tick } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import { getScroller } from 'src/utils/obsidian';
   import { delay } from '../utils/delay';
   import { animateScroll, computeScrollTop } from 'src/utils/scroll';
+  import { computeEffectiveTop } from '../utils/viewportAnchor';
   import type { TFile } from 'obsidian';
   export let headings: Heading[];
   export let editMode: boolean;
@@ -20,12 +21,17 @@
   let shadow: HTMLElement;
   let forceRenderingHeadings: Heading[] | null = null;
   let activeScrollCancel: (() => void) | null = null;
+  let effectiveTop = 0;
 
   $: fontSizeStyle = settings.fontSize ? `${settings.fontSize}px` : '12px';
   $: lineHeightStyle = settings.fontSize ? `${Math.round(settings.fontSize * 1.5)}px` : '18px';
-  $: topOffset = Platform.isMobile ? settings.mobileTopOffset : settings.desktopTopOffset;
+  $: userNudge = Platform.isMobile ? settings.mobileTopOffset : settings.desktopTopOffset;
   $: leftOffset = Platform.isMobile ? settings.mobileLeftOffset : settings.desktopLeftOffset;
-  $: rootStyles = `--sticky-header-font-size:${fontSizeStyle};--sticky-header-line-height:${lineHeightStyle};top:${topOffset}px;left:${leftOffset}px;`;
+  $: rootStyles =
+    `--sticky-header-font-size:${fontSizeStyle};` +
+    `--sticky-header-line-height:${lineHeightStyle};` +
+    `top:${effectiveTop}px;` +
+    `left:${leftOffset}px;`;
 
   let filename = file?.basename ?? '';
   $: filename = file?.basename ?? '';
@@ -34,8 +40,88 @@
   const iconCache: Record<string, string> = {};
   const getIconHtml = (name: string) => (iconCache[name] ??= getIcon(name)?.outerHTML ?? '');
 
+  let resizeObserver: ResizeObserver | null = null;
+  let pendingAnimationFrame: number | null = null;
+  let settleTimers: number[] = [];
+
+  const recomputeTop = () => {
+    if (!main) {
+      return;
+    }
+    const nextTop = computeEffectiveTop(main, view, settings);
+    if (nextTop !== effectiveTop) {
+      effectiveTop = nextTop;
+    }
+  };
+
+  const throttledRecompute = () => {
+    if (pendingAnimationFrame !== null) {
+      return;
+    }
+    pendingAnimationFrame = requestAnimationFrame(() => {
+      pendingAnimationFrame = null;
+      recomputeTop();
+    });
+  };
+
+  const scheduleSettle = () => {
+    settleTimers.forEach(window.clearTimeout);
+    settleTimers = [];
+    if (!Platform.isMobile) {
+      return;
+    }
+    settleTimers = [window.setTimeout(recomputeTop, 300), window.setTimeout(recomputeTop, 1000)];
+  };
+
+  const attachLayoutListeners = () => {
+    const contentEl = view.contentEl;
+    const container = main?.parentElement;
+    if (!contentEl || !container) {
+      return;
+    }
+
+    resizeObserver = new ResizeObserver(throttledRecompute);
+    resizeObserver.observe(contentEl);
+    resizeObserver.observe(container);
+
+    window.addEventListener('resize', throttledRecompute);
+    window.visualViewport?.addEventListener('resize', throttledRecompute);
+  };
+
+  const detachLayoutListeners = () => {
+    resizeObserver?.disconnect();
+    resizeObserver = null;
+    window.removeEventListener('resize', throttledRecompute);
+    window.visualViewport?.removeEventListener('resize', throttledRecompute);
+    settleTimers.forEach(window.clearTimeout);
+    settleTimers = [];
+    if (pendingAnimationFrame !== null) {
+      cancelAnimationFrame(pendingAnimationFrame);
+      pendingAnimationFrame = null;
+    }
+  };
+
+  $: if (main) {
+    recomputeTop();
+  }
+
+  $: if (settings && main) {
+    recomputeTop();
+  }
+
+  $: if (userNudge >= 0 && main) {
+    recomputeTop();
+  }
+
   onMount(() => {
     console.debug('mounted svelte component');
+    recomputeTop();
+    attachLayoutListeners();
+    scheduleSettle();
+  });
+
+  onDestroy(() => {
+    detachLayoutListeners();
   });
 
   const calculateExpectedHeight = async (index: number) => {
