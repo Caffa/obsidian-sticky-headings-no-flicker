@@ -43,6 +43,7 @@
   let resizeObserver: ResizeObserver | null = null;
   let pendingAnimationFrame: number | null = null;
   let settleTimers: number[] = [];
+  let observedContainer: HTMLElement | null = null;
 
   const recomputeTop = () => {
     if (!main) {
@@ -67,34 +68,42 @@
   const scheduleSettle = () => {
     settleTimers.forEach(window.clearTimeout);
     settleTimers = [];
-    if (!Platform.isMobile) {
-      return;
-    }
     settleTimers = [window.setTimeout(recomputeTop, 300), window.setTimeout(recomputeTop, 1000)];
   };
 
   const attachLayoutListeners = () => {
+    if (!main) {
+      return;
+    }
     const contentEl = view.contentEl;
-    const container = main?.parentElement;
+    const container = main.parentElement;
     if (!contentEl || !container) {
       return;
     }
 
+    // Guard against duplicate listener registration on the same container.
+    if (resizeObserver) {
+      return;
+    }
+
+    const win = main.ownerDocument.defaultView ?? window;
     resizeObserver = new ResizeObserver(throttledRecompute);
     resizeObserver.observe(contentEl);
     resizeObserver.observe(container);
 
-    window.addEventListener('resize', throttledRecompute);
-    window.visualViewport?.addEventListener('resize', throttledRecompute);
+    win.addEventListener('resize', throttledRecompute);
+    win.visualViewport?.addEventListener('resize', throttledRecompute);
   };
 
   const detachLayoutListeners = () => {
     resizeObserver?.disconnect();
     resizeObserver = null;
-    window.removeEventListener('resize', throttledRecompute);
-    window.visualViewport?.removeEventListener('resize', throttledRecompute);
+    const win = main?.ownerDocument.defaultView ?? window;
+    win.removeEventListener('resize', throttledRecompute);
+    win.visualViewport?.removeEventListener('resize', throttledRecompute);
     settleTimers.forEach(window.clearTimeout);
     settleTimers = [];
+    observedContainer = null;
     if (pendingAnimationFrame !== null) {
       cancelAnimationFrame(pendingAnimationFrame);
       pendingAnimationFrame = null;
@@ -113,11 +122,20 @@
     recomputeTop();
   }
 
+  $: if (main?.parentElement && main.parentElement !== observedContainer) {
+    observedContainer = main.parentElement;
+    detachLayoutListeners();
+    attachLayoutListeners();
+    scheduleSettle();
+  }
+
+  export const refreshAnchor = () => {
+    throttledRecompute();
+  };
+
   onMount(() => {
     console.debug('mounted svelte component');
     recomputeTop();
-    attachLayoutListeners();
-    scheduleSettle();
   });
 
   onDestroy(() => {

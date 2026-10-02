@@ -244,4 +244,10 @@ export default class StickyHeaderComponent {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     this.stickyHeaderComponents?.forEach(component => component.$set({ settings }));
   }
+
+  refreshAnchor() {
+    this.stickyHeaderComponents.forEach(component => {
+      (component as StickyHeader & { refreshAnchor?: () => void }).refreshAnchor?.();
+    });
+  }
 }

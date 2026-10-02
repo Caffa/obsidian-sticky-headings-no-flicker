@@ -563,6 +563,14 @@ export default class StickyHeadingsPlugin extends Plugin {
         }
       }
 
+      try {
+        item.headingEl?.refreshAnchor?.();
+      } catch (error) {
+        if (document.body.dataset.stickyHeadingsDebug === '1') {
+          console.warn('Failed to refresh anchor on sticky header:', error);
+        }
+      }
+
       if (scroller) {
         this.setHeadingsInView(scroller, item);
       }
@@ -872,6 +880,13 @@ export default class StickyHeadingsPlugin extends Plugin {
         item.headingEl.updateSettings(this.settings);
       }
       item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, this.settings.max, this.settings.mode);
+      try {
+        item.headingEl?.refreshAnchor?.();
+      } catch (error) {
+        if (document.body.dataset.stickyHeadingsDebug === '1') {
+          console.warn('Failed to refresh anchor after setting change:', error);
+        }
+      }
     });
     if (this.statusBarEl) {
       if (this.settings.showInStatusBar) {
