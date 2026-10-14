@@ -37,6 +37,12 @@ export function computeEffectiveTop(
   const anchorRect = view.contentEl.getBoundingClientRect();
   const containerRect = main.parentElement.getBoundingClientRect();
 
+  // Degenerate rects (zero height — hidden or detached leaf) bail out before
+  // the clamp debug log so hidden leaves stay silent.
+  if (anchorRect.height === 0 || containerRect.height === 0) {
+    return null;
+  }
+
   // Debug signal when the clamp engages (raw value was negative).
   const rawTop = anchorRect.top - containerRect.top + userNudge;
   if (rawTop < 0 && document.body.dataset.stickyHeadingsDebug === '1') {

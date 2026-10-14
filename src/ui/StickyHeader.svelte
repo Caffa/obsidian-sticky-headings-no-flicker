@@ -46,6 +46,12 @@
   let pendingAnimationFrame: number | null = null;
   let settleTimers: number[] = [];
   let observedContainer: HTMLElement | null = null;
+  // Inline `position` the container had before we forced `relative`,
+  // captured at overwrite time and restored on teardown.
+  let previousContainerPosition = '';
+  // The window the layout listeners were attached to, so removal targets the
+  // same window even when `main` is already detached (closed popout).
+  let attachedWindow: Window | null = null;
 
   const recomputeTop = (trigger: AnchorTrigger = 'mount') => {
     if (!main) {
@@ -109,14 +115,19 @@
 
     win.addEventListener('resize', onWindowResize);
     win.visualViewport?.addEventListener('resize', onVisualViewportResize);
+    attachedWindow = win;
   };
 
   const detachLayoutListeners = () => {
     resizeObserver?.disconnect();
     resizeObserver = null;
-    const win = main?.ownerDocument.defaultView ?? window;
-    win.removeEventListener('resize', onWindowResize);
-    win.visualViewport?.removeEventListener('resize', onVisualViewportResize);
+    // Remove from the window the listeners were attached to: re-deriving from
+    // `main` fails when `main` is already detached (closed popout), which
+    // would leak the listeners on that window.
+    const win = attachedWindow;
+    win?.removeEventListener('resize', onWindowResize);
+    win?.visualViewport?.removeEventListener('resize', onVisualViewportResize);
+    attachedWindow = null;
     settleTimers.forEach(window.clearTimeout);
     settleTimers = [];
     // NOTE: deliberately do NOT reset `observedContainer` here — the
@@ -146,6 +157,7 @@
     attachLayoutListeners();
     // Identity by construction: the measured ancestor is always the CSS
     // containing block, regardless of theme overrides or class refcount races.
+    previousContainerPosition = container.style.position || '';
     container.style.position = 'relative';
     observedContainer = container;
     recomputeTop('parent-change');
@@ -163,6 +175,12 @@
 
   onDestroy(() => {
     detachLayoutListeners();
+    // Restore the inline `position` we overwrote on the container. Harmless
+    // if the element is already gone from the DOM; the component is destroyed
+    // per parent, so last-wins on this variable is correct.
+    if (observedContainer && observedContainer.style.position !== previousContainerPosition) {
+      observedContainer.style.position = previousContainerPosition;
+    }
   });
 
   const calculateExpectedHeight = async (index: number) => {
