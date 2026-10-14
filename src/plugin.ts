@@ -96,6 +96,16 @@ export default class StickyHeadingsPlugin extends Plugin {
             const activeLeafId = activeLeaf?.id ?? null;
             if (activeLeafId === this.lastActiveLeafId) return;
             this.lastActiveLeafId = activeLeafId;
+            // A freshly shown tab should correct its anchor position within a
+            // frame instead of waiting for the async update chain below.
+            const item = activeLeafId ? this.fileResolveMap.get(activeLeafId) : undefined;
+            try {
+              item?.headingEl?.refreshAnchor?.();
+            } catch (error) {
+              if (document.body.dataset.stickyHeadingsDebug === '1') {
+                console.warn('Failed to refresh anchor on leaf activation:', error);
+              }
+            }
             // timeout to wait for cm.editor to load
             setTimeout(() => {
               if (activeLeafId === this.lastActiveLeafId) {
@@ -497,6 +507,17 @@ export default class StickyHeadingsPlugin extends Plugin {
     item.handleUpdateInFlight = true;
     item.handleUpdateInFlightSince = Date.now();
     try {
+      // Refresh the anchor EARLY, before the async heading retrieval: fast
+      // mode toggles and layout churn must not leave the header pinned to a
+      // stale top for seconds while retrieveHeadings is in flight.
+      try {
+        item.headingEl?.refreshAnchor?.();
+      } catch (error) {
+        if (document.body.dataset.stickyHeadingsDebug === '1') {
+          console.warn('Failed to refresh anchor early on component update:', error);
+        }
+      }
+
       const scroller = getScroller(view);
 
       // Always use the live file when available; item.file may be stale after swaps.

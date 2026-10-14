@@ -15,7 +15,7 @@
     "allowSyntheticDefaultImports": true,
     "outDir": "dist",
     "lib": ["DOM", "ES5", "ES6", "ES7"],
-    "types": ["svelte", "node", "obsidian-typings"]
+    "types": ["svelte", "node", "obsidian-typings", "bun-types"]
   },
   "include": ["**/*.ts", "*.mjs", "eslint.config.js", "**/*.svelte"]
 }

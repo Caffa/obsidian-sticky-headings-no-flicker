@@ -8,6 +8,8 @@
   import { delay } from '../utils/delay';
   import { animateScroll, computeScrollTop } from 'src/utils/scroll';
   import { computeEffectiveTop } from '../utils/viewportAnchor';
+  import { logAnchor } from '../utils/anchorDebug';
+  import type { AnchorTrigger } from '../utils/anchorDebug';
   import type { TFile } from 'obsidian';
   export let headings: Heading[];
   export let editMode: boolean;
@@ -45,30 +47,44 @@
   let settleTimers: number[] = [];
   let observedContainer: HTMLElement | null = null;
 
-  const recomputeTop = () => {
+  const recomputeTop = (trigger: AnchorTrigger = 'mount') => {
     if (!main) {
       return;
     }
+    const prevTop = effectiveTop;
     const nextTop = computeEffectiveTop(main, view, settings);
-    if (nextTop !== effectiveTop) {
+    logAnchor(trigger, main, view, prevTop, nextTop);
+    // A `null` result means degenerate rects (hidden/detached leaf) — keep the
+    // last good top instead of clobbering it with a fallback value.
+    if (nextTop != null && nextTop !== effectiveTop) {
       effectiveTop = nextTop;
     }
   };
 
-  const throttledRecompute = () => {
+  let pendingTrigger: AnchorTrigger = 'mount';
+  const throttledRecompute = (trigger: AnchorTrigger) => {
+    pendingTrigger = trigger;
     if (pendingAnimationFrame !== null) {
       return;
     }
     pendingAnimationFrame = requestAnimationFrame(() => {
       pendingAnimationFrame = null;
-      recomputeTop();
+      recomputeTop(pendingTrigger);
     });
   };
+
+  // Stable wrapper references so add/removeEventListener stay paired.
+  const onResizeObserved = () => throttledRecompute('ro');
+  const onWindowResize = () => throttledRecompute('win-resize');
+  const onVisualViewportResize = () => throttledRecompute('vv-resize');
 
   const scheduleSettle = () => {
     settleTimers.forEach(window.clearTimeout);
     settleTimers = [];
-    settleTimers = [window.setTimeout(recomputeTop, 300), window.setTimeout(recomputeTop, 1000)];
+    settleTimers = [
+      window.setTimeout(() => recomputeTop('settle-300'), 300),
+      window.setTimeout(() => recomputeTop('settle-1000'), 1000),
+    ];
   };
 
   const attachLayoutListeners = () => {
@@ -87,23 +103,25 @@
     }
 
     const win = main.ownerDocument.defaultView ?? window;
-    resizeObserver = new ResizeObserver(throttledRecompute);
+    resizeObserver = new ResizeObserver(onResizeObserved);
     resizeObserver.observe(contentEl);
     resizeObserver.observe(container);
 
-    win.addEventListener('resize', throttledRecompute);
-    win.visualViewport?.addEventListener('resize', throttledRecompute);
+    win.addEventListener('resize', onWindowResize);
+    win.visualViewport?.addEventListener('resize', onVisualViewportResize);
   };
 
   const detachLayoutListeners = () => {
     resizeObserver?.disconnect();
     resizeObserver = null;
     const win = main?.ownerDocument.defaultView ?? window;
-    win.removeEventListener('resize', throttledRecompute);
-    win.visualViewport?.removeEventListener('resize', throttledRecompute);
+    win.removeEventListener('resize', onWindowResize);
+    win.visualViewport?.removeEventListener('resize', onVisualViewportResize);
     settleTimers.forEach(window.clearTimeout);
     settleTimers = [];
-    observedContainer = null;
+    // NOTE: deliberately do NOT reset `observedContainer` here — the
+    // parent-change reactive block assigns it after re-attaching, and nulling
+    // it here would clobber that assignment whenever `main` re-binds.
     if (pendingAnimationFrame !== null) {
       cancelAnimationFrame(pendingAnimationFrame);
       pendingAnimationFrame = null;
@@ -111,31 +129,36 @@
   };
 
   $: if (main) {
-    recomputeTop();
+    recomputeTop('main-bind');
   }
 
   $: if (settings && main) {
-    recomputeTop();
+    recomputeTop('settings');
   }
 
   $: if (userNudge >= 0 && main) {
-    recomputeTop();
+    recomputeTop('nudge');
   }
 
   $: if (main?.parentElement && main.parentElement !== observedContainer) {
-    observedContainer = main.parentElement;
+    const container = main.parentElement;
     detachLayoutListeners();
     attachLayoutListeners();
+    // Identity by construction: the measured ancestor is always the CSS
+    // containing block, regardless of theme overrides or class refcount races.
+    container.style.position = 'relative';
+    observedContainer = container;
+    recomputeTop('parent-change');
     scheduleSettle();
   }
 
   export const refreshAnchor = () => {
-    throttledRecompute();
+    throttledRecompute('refreshAnchor');
   };
 
   onMount(() => {
     console.debug('mounted svelte component');
-    recomputeTop();
+    recomputeTop('mount');
   });
 
   onDestroy(() => {
