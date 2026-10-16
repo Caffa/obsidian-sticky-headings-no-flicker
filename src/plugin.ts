@@ -23,6 +23,7 @@ import { calcIndentLevels } from './utils/calcIndentLevels';
 import { makeExpectedHeadings } from './utils/makeExpectedHeadings';
 import { HeadingSuggester } from './ui/statusBar/suggester';
 import { animateScroll, computeScrollTop } from './utils/scroll';
+import { configureAnchorDebugSink, nodeFileExists } from './utils/anchorDebug';
 import { getCachedTitle, invalidateMarkdownCacheForFile, setCachedTitle } from './utils/markdownCache';
 
 type FileResolveMap = Map<string, FileResolveEntry>;
@@ -73,6 +74,19 @@ export default class StickyHeadingsPlugin extends Plugin {
 
   // eslint-disable-next-line @typescript-eslint/no-misused-promises
   async onload() {
+    // File-based debug trace: drop a `debug.txt` into the plugin folder to
+    // enable anchor debug logging and mirror it to `debug-trace.jsonl` next to
+    // it. Desktop only — node fs is unavailable on mobile.
+    try {
+      if (Platform.isDesktopApp && this.manifest.dir && nodeFileExists(`${this.manifest.dir}/debug.txt`)) {
+        document.body.dataset.stickyHeadingsDebug = '1';
+        configureAnchorDebugSink(this.manifest.dir);
+        console.info('[sticky-headings] debug.txt present — file trace enabled');
+      }
+    } catch (error) {
+      console.warn('[sticky-headings] failed to init file debug trace:', error);
+    }
+
     try {
       await this.loadSettings();
     } catch (error) {
