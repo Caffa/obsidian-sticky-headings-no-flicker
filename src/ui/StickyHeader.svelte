@@ -8,7 +8,7 @@
   import { delay } from '../utils/delay';
   import { animateScroll, computeScrollTop } from 'src/utils/scroll';
   import { computeEffectiveTop } from '../utils/viewportAnchor';
-  import { logAnchor } from '../utils/anchorDebug';
+  import { logAnchor, traceEvent } from '../utils/anchorDebug';
   import type { AnchorTrigger } from '../utils/anchorDebug';
   import type { TFile } from 'obsidian';
   export let headings: Heading[];
@@ -54,7 +54,11 @@
   let attachedWindow: Window | null = null;
 
   const recomputeTop = (trigger: AnchorTrigger = 'mount') => {
+    // Log even when `main` is unbound: this hop previously returned silently,
+    // so the file trace showed zero lines for a window where something still
+    // rendered. Keeping the early return after the log — no behavior change.
     if (!main) {
+      logAnchor(trigger, main, view, effectiveTop, null);
       return;
     }
     const prevTop = effectiveTop;
@@ -171,6 +175,7 @@
   onMount(() => {
     console.debug('mounted svelte component');
     recomputeTop('mount');
+    traceEvent('svelte-mount', { headingsLen: headings.length, hasMain: !!main });
   });
 
   onDestroy(() => {

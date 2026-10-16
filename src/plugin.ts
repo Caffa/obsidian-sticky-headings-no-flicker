@@ -23,7 +23,7 @@ import { calcIndentLevels } from './utils/calcIndentLevels';
 import { makeExpectedHeadings } from './utils/makeExpectedHeadings';
 import { HeadingSuggester } from './ui/statusBar/suggester';
 import { animateScroll, computeScrollTop } from './utils/scroll';
-import { configureAnchorDebugSink } from './utils/anchorDebug';
+import { configureAnchorDebugSink, traceEvent } from './utils/anchorDebug';
 import { getCachedTitle, invalidateMarkdownCacheForFile, setCachedTitle } from './utils/markdownCache';
 
 type FileResolveMap = Map<string, FileResolveEntry>;
@@ -430,6 +430,7 @@ export default class StickyHeadingsPlugin extends Plugin {
     // forever. Mirrors the handleUpdateInFlight pattern.
     const leafId = view?.leaf?.id;
     if (!leafId) return;
+    traceEvent('leaf-init', { leafId, path: view.file?.path ?? null });
     if (this.initInFlight.has(leafId)) return;
     this.initInFlight.add(leafId);
     try {
@@ -513,6 +514,10 @@ export default class StickyHeadingsPlugin extends Plugin {
           }
         }
         await this.handleComponentUpdate(view);
+        traceEvent('leaf-init-done', {
+          leafId,
+          components: this.fileResolveMap.get(id)?.headingEl?.stickyHeaderComponents?.length ?? 0,
+        });
       }
     } catch (error) {
       console.warn('Failed to init sticky header component:', error);
@@ -574,6 +579,11 @@ export default class StickyHeadingsPlugin extends Plugin {
     const item = this.fileResolveMap.get(id);
     if (!item) return;
     if (item.handleUpdateInFlight) return;
+    traceEvent('component-update', {
+      leafId: id,
+      components: item.headingEl?.stickyHeaderComponents?.length ?? 0,
+      headingsLen: item.headings.length,
+    });
     item.handleUpdateInFlight = true;
     item.handleUpdateInFlightSince = Date.now();
     try {
@@ -966,10 +976,17 @@ export default class StickyHeadingsPlugin extends Plugin {
 
   onSettingChanged() {
     this.settings = this.settings || { ...defaultSettings };
-    this.fileResolveMap.forEach(item => {
+    traceEvent('settings-changed', {
+      desktopTopOffset: this.settings.desktopTopOffset,
+      mobileTopOffset: this.settings.mobileTopOffset,
+      fontSize: this.settings.fontSize,
+      items: this.fileResolveMap.size,
+    });
+    this.fileResolveMap.forEach((item, leafId) => {
       if (item.headingEl) {
         item.headingEl.updateSettings(this.settings);
       }
+      traceEvent('apply-settings', { leafId });
       item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, this.settings.max, this.settings.mode);
       try {
         item.headingEl?.refreshAnchor?.();

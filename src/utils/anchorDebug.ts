@@ -22,7 +22,7 @@ const classSnippet = (el: Element | null | undefined, maxLength = 80): string =>
 
 // Build nonce: bump this string per trace-mechanism change so a deployed
 // debug-trace.jsonl proves exactly which build wrote it.
-const TRACE_BUILD = 'trace2-adapter';
+const TRACE_BUILD = 'trace3-hops';
 
 // Serial line sink installed by `configureAnchorDebugSink`; null = file trace off.
 let anchorDebugSink: ((line: string) => void) | null = null;
@@ -66,6 +66,21 @@ const mirrorTrace = (payload: Record<string, unknown>): void => {
     // Silent — the file trace must never interfere with the plugin.
   }
 };
+
+/**
+ * Generic file-trace event for propagation hops (leaf init, settings
+ * changes, svelte mounts, heading updates). Gated on the same debug flag as
+ * `logAnchor`, wraps `mirrorTrace` with `ts`, `type` and the payload. Silent
+ * on failure — the file trace must never interfere with the plugin.
+ */
+export function traceEvent(type: string, payload: Record<string, unknown>): void {
+  if (!isAnchorDebugEnabled()) return;
+  mirrorTrace({
+    ts: new Date().toISOString(),
+    type,
+    ...payload,
+  });
+}
 
 /**
  * Debug logging for sticky-header anchor computation, gated on

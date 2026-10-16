@@ -1,5 +1,6 @@
 import StickyHeader from './ui/StickyHeader.svelte';
 import { defaultSettings } from './settings';
+import { traceEvent } from './utils/anchorDebug';
 import type { MarkdownView, TFile } from 'obsidian';
 import type { Heading, ISetting } from './types';
 
@@ -211,13 +212,18 @@ export default class StickyHeaderComponent {
   ) {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!this.stickyHeaderComponents?.length) return;
-    if (
+    const equal =
       headingsEqual(headings, this.lastHeadings) &&
       getExpectedHeadings === this.lastGetExpectedHeadings &&
       showFileName === this.lastShowFileName &&
       view === this.lastView &&
-      file === this.lastFile
-    ) {
+      file === this.lastFile;
+    traceEvent('update-headings', {
+      components: this.stickyHeaderComponents.length,
+      headingsLen: headings.length,
+      equal,
+    });
+    if (equal) {
       return;
     }
     this.lastHeadings = headings;
@@ -241,6 +247,10 @@ export default class StickyHeaderComponent {
   }
 
   updateSettings(settings: ISetting) {
+    traceEvent('component-update-settings', {
+      components: this.stickyHeaderComponents.length,
+      desktopTopOffset: settings.desktopTopOffset,
+    });
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     this.stickyHeaderComponents?.forEach(component => component.$set({ settings }));
   }
