@@ -196,6 +196,34 @@ export default class StickyHeadingsPlugin extends Plugin {
       } catch (error) {
         console.warn('Failed to register health check interval:', error);
       }
+
+      try {
+        // Catch-up pass: leaves already open before the plugin loaded (enable
+        // toggle, app reload, hot-swap deploy) never fire active-leaf-change,
+        // so without this they stay header-less until manually re-focused.
+        // Strictly idempotent and silent — anything skipped here (no file yet,
+        // metadata pending) is covered later by the event handlers above.
+        this.app.workspace.onLayoutReady(() => {
+          this.app.workspace.iterateAllLeaves(leaf => {
+            try {
+              const view = leaf?.view;
+              if (!(view && view instanceof MarkdownView)) return;
+              const leafId = view.leaf?.id;
+              if (!leafId) return;
+              if (this.fileResolveMap.has(leafId)) return; // idempotent: never re-init
+              if (this.settings.mode === 'disable') return;
+              if (!view.getFile()) return; // metadata not ready yet
+              this.initStickyHeaderComponent(view);
+            } catch (error) {
+              if (document.body.dataset.stickyHeadingsDebug === '1') {
+                console.warn('[sticky-headings] layout-ready leaf init failed:', error);
+              }
+            }
+          });
+        });
+      } catch (error) {
+        console.warn('Failed to register layout-ready leaf catch-up:', error);
+      }
     } catch (error) {
       console.warn('Sticky headings plugin onload encountered an error:', error);
     }
