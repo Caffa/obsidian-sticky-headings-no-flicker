@@ -5,22 +5,30 @@ import type { ISetting } from '../types';
 /**
  * Pure core of the sticky-header top computation.
  *
- * Returns `null` as a skip signal when either rect is degenerate (zero height —
- * hidden or detached leaf), so callers keep their last good value instead of
- * clobbering it with a fallback. Never import `obsidian` here: this function
- * is unit-tested with bun.
+ * Container-relative semantics: the returned `top` is the user nudge alone,
+ * measured against the CSS containing block the header actually renders
+ * against (`main.parentElement`, made `position: relative` inline). The rect
+ * heights exist ONLY as a degeneracy guard: a zero height means a hidden or
+ * detached leaf, and returning `null` tells callers to keep their last good
+ * value instead of clobbering it.
+ *
+ * WHY container-relative and not anchor-vs-container delta: a
+ * delta-dependent formula `max(0, nudge − delta)` saturates whenever a
+ * note-toolbar or theme pushes the container down by ≥ nudge — every slider
+ * value clamps to 0 and the setting appears dead. It also makes the visual
+ * anchor depend on whichever element the delta happened to be measured
+ * against at runtime, so the header jumps between anchors when deltas change
+ * (tab switches, edit/preview toggles). Anchoring purely on the containing
+ * block with a user offset is delta-independent: same slider value, same
+ * position, everywhere.
+ *
+ * Never import `obsidian` here: this function is unit-tested with bun.
  */
-export function computeTopFromRects(
-  anchorTop: number,
-  anchorHeight: number,
-  containerTop: number,
-  containerHeight: number,
-  userNudge: number
-): number | null {
+export function computeTopFromRects(anchorHeight: number, containerHeight: number, userNudge: number): number | null {
   if (anchorHeight === 0 || containerHeight === 0) {
     return null;
   }
-  return Math.max(0, Math.round(anchorTop - containerTop + userNudge));
+  return Math.max(0, Math.round(userNudge));
 }
 
 export function computeEffectiveTop(
@@ -37,17 +45,11 @@ export function computeEffectiveTop(
   const anchorRect = view.contentEl.getBoundingClientRect();
   const containerRect = main.parentElement.getBoundingClientRect();
 
-  // Degenerate rects (zero height — hidden or detached leaf) bail out before
-  // the clamp debug log so hidden leaves stay silent.
+  // Degenerate rects (zero height — hidden or detached leaf) bail out so
+  // hidden leaves stay silent and keep their last good value.
   if (anchorRect.height === 0 || containerRect.height === 0) {
     return null;
   }
 
-  // Debug signal when the clamp engages (raw value was negative).
-  const rawTop = anchorRect.top - containerRect.top + userNudge;
-  if (rawTop < 0 && document.body.dataset.stickyHeadingsDebug === '1') {
-    console.debug('[sticky-headings] effective top clamped to 0, raw was negative:', rawTop);
-  }
-
-  return computeTopFromRects(anchorRect.top, anchorRect.height, containerRect.top, containerRect.height, userNudge);
+  return computeTopFromRects(anchorRect.height, containerRect.height, userNudge);
 }

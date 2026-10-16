@@ -44,13 +44,11 @@ const en: BaseTranslation = {
     },
     desktopTopOffset: {
       title: 'Desktop header position',
-      description:
-        'Extra distance below the top of the content area. The header automatically aligns below the tab/toolbar on each device; use this only for fine-tuning.',
+      description: 'Distance below the top of the visible note content area.',
     },
     mobileTopOffset: {
       title: 'Mobile header position',
-      description:
-        'Extra distance below the top of the content area. The header automatically aligns below the tab/toolbar on each device; use this only for fine-tuning.',
+      description: 'Distance below the top of the visible note content area.',
     },
     desktopLeftOffset: {
       title: 'Desktop header left offset',

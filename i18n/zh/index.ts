@@ -42,11 +42,11 @@ const zh: Translation = {
     },
     desktopTopOffset: {
       title: '桌面端标题位置',
-      description: '内容区顶部下方的额外间距。标题会自动对齐到各设备的标签/工具栏下方，此项仅用于微调。',
+      description: '距离可见笔记内容区顶部下方的间距。',
     },
     mobileTopOffset: {
       title: '移动端标题位置',
-      description: '内容区顶部下方的额外间距。标题会自动对齐到各设备的标签/工具栏下方，此项仅用于微调。',
+      description: '距离可见笔记内容区顶部下方的间距。',
     },
     desktopLeftOffset: {
       title: '桌面端标题左边距',

@@ -29,35 +29,30 @@ const makeSettings = (overrides: Partial<ISetting> = {}): ISetting => ({
 });
 
 describe('computeTopFromRects', () => {
-  it('aligned tops resolve to the user nudge', () => {
-    expect(computeTopFromRects(100, 50, 100, 200, 10)).toBe(10);
-  });
-
-  it('container below the anchor by less than the nudge stays positive', () => {
-    // raw = 0 - 30 + 40 = 10
-    expect(computeTopFromRects(0, 100, 30, 200, 40)).toBe(10);
-  });
-
-  it('container below the anchor by more than the nudge clamps to 0', () => {
-    // raw = 0 - 60 + 40 = -20
-    expect(computeTopFromRects(0, 100, 60, 200, 40)).toBe(0);
+  it('healthy rects resolve to the user nudge, independent of geometry', () => {
+    expect(computeTopFromRects(50, 200, 10)).toBe(10);
+    expect(computeTopFromRects(500, 400, 31)).toBe(31);
   });
 
   it('zero anchor height is a skip signal (null)', () => {
-    expect(computeTopFromRects(100, 0, 0, 200, 5)).toBeNull();
+    expect(computeTopFromRects(0, 200, 5)).toBeNull();
   });
 
   it('zero container height is a skip signal (null)', () => {
-    expect(computeTopFromRects(100, 50, 0, 0, 5)).toBeNull();
+    expect(computeTopFromRects(50, 0, 5)).toBeNull();
   });
 
-  it('negative raw top clamps to 0', () => {
-    expect(computeTopFromRects(0, 100, 100, 200, 10)).toBe(0);
+  it('fractional nudges round to the nearest integer', () => {
+    expect(computeTopFromRects(50, 200, 30.4)).toBe(30);
+    expect(computeTopFromRects(50, 200, 30.6)).toBe(31);
   });
 
-  it('fractional raw tops round to the nearest integer', () => {
-    expect(computeTopFromRects(100.4, 10, 50, 100, 0)).toBe(50);
-    expect(computeTopFromRects(100.6, 10, 50, 100, 0)).toBe(51);
+  it('nudge 0 resolves to 0', () => {
+    expect(computeTopFromRects(50, 200, 0)).toBe(0);
+  });
+
+  it('negative nudges clamp to 0', () => {
+    expect(computeTopFromRects(50, 200, -10)).toBe(0);
   });
 });
 
@@ -66,5 +61,31 @@ describe('computeEffectiveTop', () => {
     const view = {} as MarkdownView;
     expect(computeEffectiveTop(undefined, view, makeSettings())).toBeNull();
     expect(computeEffectiveTop({} as HTMLElement, view, makeSettings())).toBeNull();
+  });
+
+  it('healthy rects return the nudge even when the container sits far below the anchor', () => {
+    // Note-toolbar/theme push the container 40px below the content top; the
+    // slider must still win because the formula is container-relative.
+    const contentEl = {
+      getBoundingClientRect: () => ({ top: 300, height: 500 }),
+    };
+    const parent = {
+      getBoundingClientRect: () => ({ top: 340, height: 460 }),
+    };
+    const view = { contentEl } as unknown as MarkdownView;
+    const main = { parentElement: parent } as unknown as HTMLElement;
+    expect(computeEffectiveTop(main, view, makeSettings({ desktopTopOffset: 31 }))).toBe(31);
+  });
+
+  it('degenerate anchor rect is a skip signal (null)', () => {
+    const contentEl = {
+      getBoundingClientRect: () => ({ top: 0, height: 0 }),
+    };
+    const parent = {
+      getBoundingClientRect: () => ({ top: 0, height: 460 }),
+    };
+    const view = { contentEl } as unknown as MarkdownView;
+    const main = { parentElement: parent } as unknown as HTMLElement;
+    expect(computeEffectiveTop(main, view, makeSettings({ desktopTopOffset: 31 }))).toBeNull();
   });
 });
