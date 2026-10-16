@@ -1,8 +1,4 @@
-import type * as NodeFs from 'fs';
 import type { MarkdownView } from 'obsidian';
-
-/** Node's fs module shape, imported type-only so nothing is required at load. */
-type FsModule = typeof NodeFs;
 
 export type AnchorTrigger =
   | 'mount'
@@ -24,77 +20,52 @@ const classSnippet = (el: Element | null | undefined, maxLength = 80): string =>
   return value.length > maxLength ? `${value.slice(0, maxLength)}…` : value;
 };
 
-const TRACE_FILENAME = 'debug-trace.jsonl';
+// Build nonce: bump this string per trace-mechanism change so a deployed
+// debug-trace.jsonl proves exactly which build wrote it.
+const TRACE_BUILD = 'trace2-adapter';
 
-// Directory of the file sink (the plugin folder); null disables the file trace.
-let anchorDebugSinkDir: string | null = null;
-
-// Resolved Node fs, cached after first successful require.
-let fsModule: FsModule | null = null;
-
-/**
- * Lazily resolve Node's fs. Obsidian mobile has no Node runtime — a static
- * `import from 'fs'` compiles to a top-level `require('fs')` in the CJS bundle,
- * which crashes plugin load there. This resolves only where a working `require`
- * exists (desktop) and never throws.
- */
-const getFs = (): FsModule | null => {
-  if (fsModule !== null) return fsModule;
-  try {
-    if (typeof require === 'function') {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports -- deliberate lazy require; a static fs import compiles to a top-level require that crashes mobile
-      fsModule = require('fs') as FsModule;
-    }
-  } catch {
-    // No Node fs reachable (mobile or sandboxed) — file tracing stays off.
-    fsModule = null;
-  }
-  return fsModule;
-};
+// Serial line sink installed by `configureAnchorDebugSink`; null = file trace off.
+let anchorDebugSink: ((line: string) => void) | null = null;
 
 /**
- * `existsSync` passthrough that returns false instead of throwing when Node's
- * fs isn't reachable (mobile). Used for the `debug.txt` marker check.
+ * Install the file sink for anchor debug traces (wired to the vault
+ * DataAdapter in onload) and immediately emit a `trace-open` line carrying the
+ * build nonce, plugin version and dir. Also logs the enablement to the console
+ * once — mirroring the previous onload console.info. Never throws.
  */
-export const nodeFileExists = (path: string): boolean => {
-  const fs = getFs();
-  if (fs === null) return false;
+export function configureAnchorDebugSink(
+  sink: (line: string) => void,
+  manifest?: { dir?: string; version?: string }
+): void {
+  anchorDebugSink = sink;
+  console.info('[sticky-headings] debug.txt present — file trace enabled');
   try {
-    return fs.existsSync(path);
+    anchorDebugSink(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        type: 'trace-open',
+        build: TRACE_BUILD,
+        version: manifest?.version,
+        dir: manifest?.dir,
+      })
+    );
   } catch {
-    return false;
+    // Sink failures must never interfere with the plugin.
   }
-};
+}
 
-const traceFilePath = (pluginDir: string): string => `${pluginDir}/${TRACE_FILENAME}`;
-
-const appendTrace = (payload: Record<string, unknown>): void => {
-  const fs = getFs();
-  if (anchorDebugSinkDir == null || fs === null) return;
+/**
+ * Mirror one trace payload through the sink as a JSONL line (the sink itself
+ * appends the newline). No-op before `configureAnchorDebugSink`. Silent on
+ * failure — the file trace must never interfere with the plugin.
+ */
+const mirrorTrace = (payload: Record<string, unknown>): void => {
   try {
-    fs.appendFileSync(traceFilePath(anchorDebugSinkDir), `${JSON.stringify(payload)}\n`);
+    anchorDebugSink?.(JSON.stringify(payload));
   } catch {
     // Silent — the file trace must never interfere with the plugin.
   }
 };
-
-/**
- * Enable (pluginDir) or disable (null) the file sink for anchor debug traces.
- * Truncates `${pluginDir}/debug-trace.jsonl` so each session starts clean, then
- * records a `trace-open` line. Never throws.
- */
-export function configureAnchorDebugSink(pluginDir: string | null): void {
-  anchorDebugSinkDir = pluginDir;
-  const fs = getFs();
-  if (pluginDir == null || fs === null) return;
-  try {
-    fs.writeFileSync(traceFilePath(pluginDir), '');
-    appendTrace({ timestamp: new Date().toISOString(), event: 'trace-open', pluginDir });
-  } catch {
-    // Truncate failed — drop the sink instead of spamming failing appends.
-    anchorDebugSinkDir = null;
-  }
-}
 
 /**
  * Debug logging for sticky-header anchor computation, gated on
@@ -105,7 +76,9 @@ export function configureAnchorDebugSink(pluginDir: string | null): void {
  * against (`offsetParent`). Enable with:
  * `document.body.dataset.stickyHeadingsDebug = '1'` in the console, or drop a
  * `debug.txt` file into the plugin folder — that also mirrors every entry to
- * `debug-trace.jsonl` next to it (desktop only, see `configureAnchorDebugSink`).
+ * `debug-trace.jsonl` next to it — see `configureAnchorDebugSink`, which
+ * wires the file sink through the vault DataAdapter (works on desktop and
+ * mobile, no node fs involved).
  */
 export function logAnchor(
   trigger: AnchorTrigger,
@@ -142,9 +115,9 @@ export function logAnchor(
       offsetParentClass,
       agrees: offsetParent === parent,
     });
-    appendTrace({
-      timestamp: new Date().toISOString(),
-      event: 'anchor',
+    mirrorTrace({
+      ts: new Date().toISOString(),
+      type: 'anchor',
       trigger,
       prevTop,
       nextTop,

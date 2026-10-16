@@ -23,7 +23,7 @@ import { calcIndentLevels } from './utils/calcIndentLevels';
 import { makeExpectedHeadings } from './utils/makeExpectedHeadings';
 import { HeadingSuggester } from './ui/statusBar/suggester';
 import { animateScroll, computeScrollTop } from './utils/scroll';
-import { configureAnchorDebugSink, nodeFileExists } from './utils/anchorDebug';
+import { configureAnchorDebugSink } from './utils/anchorDebug';
 import { getCachedTitle, invalidateMarkdownCacheForFile, setCachedTitle } from './utils/markdownCache';
 
 type FileResolveMap = Map<string, FileResolveEntry>;
@@ -76,16 +76,27 @@ export default class StickyHeadingsPlugin extends Plugin {
   async onload() {
     // File-based debug trace: drop a `debug.txt` into the plugin folder to
     // enable anchor debug logging and mirror it to `debug-trace.jsonl` next to
-    // it. Desktop only — node fs is unavailable on mobile.
-    try {
-      if (Platform.isDesktopApp && this.manifest.dir && nodeFileExists(`${this.manifest.dir}/debug.txt`)) {
-        document.body.dataset.stickyHeadingsDebug = '1';
-        configureAnchorDebugSink(this.manifest.dir);
-        console.info('[sticky-headings] debug.txt present — file trace enabled');
+    // it. Uses the vault DataAdapter (paths are vault-root-relative, matching
+    // `manifest.dir`) so it works wherever the vault lives — no node fs.
+    void (async () => {
+      try {
+        const { adapter } = this.app.vault;
+        const marker = `${this.manifest.dir}/debug.txt`;
+        if (await adapter.exists(marker)) {
+          document.body.dataset.stickyHeadingsDebug = '1';
+          // Serial queue closure over adapter.append — catch rejections silently.
+          let chain: Promise<void> = Promise.resolve();
+          const sink = (line: string) => {
+            chain = chain
+              .then(() => adapter.append(`${this.manifest.dir}/debug-trace.jsonl`, line + '\n'))
+              .catch(() => {});
+          };
+          configureAnchorDebugSink(sink, this.manifest);
+        }
+      } catch {
+        // never interfere with plugin startup
       }
-    } catch (error) {
-      console.warn('[sticky-headings] failed to init file debug trace:', error);
-    }
+    })();
 
     try {
       await this.loadSettings();
