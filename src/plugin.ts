@@ -37,6 +37,11 @@ export default class StickyHeadingsPlugin extends Plugin {
   statusBarClickHandler: (() => void) | undefined;
   markdownCache: Map<string, string> = new Map();
   private lastActiveLeafId: string | null = null;
+  // Per-leaf init serialization (same string keying as fileResolveMap).
+  // Prevents concurrent initStickyHeaderComponent calls for the same leaf from
+  // both passing the fileResolveMap has(id) re-check inside the await window
+  // and building duplicate StickyHeaderComponents.
+  private initInFlight = new Set<string>();
 
   private normalizeSettings(data?: Partial<ISetting>): ISetting {
     return { ...defaultSettings, ...(data ?? {}) };
@@ -417,6 +422,16 @@ export default class StickyHeadingsPlugin extends Plugin {
   }
 
   async initStickyHeaderComponent(view: MarkdownView) {
+    // Serialize per-leaf init: layout-ready catch-up, checkFileResolveMap
+    // timers, and the 5s health check can overlap for the same leaf id. Both
+    // callers would pass the fileResolveMap has(id) re-check while
+    // retrieveHeadings is in flight and each build a StickyHeaderComponent —
+    // the second map-set orphans the first, whose DOM + EventRef stay mounted
+    // forever. Mirrors the handleUpdateInFlight pattern.
+    const leafId = view?.leaf?.id;
+    if (!leafId) return;
+    if (this.initInFlight.has(leafId)) return;
+    this.initInFlight.add(leafId);
     try {
       const { id } = view?.leaf ?? {};
       if (!id) return;
@@ -501,6 +516,8 @@ export default class StickyHeadingsPlugin extends Plugin {
       }
     } catch (error) {
       console.warn('Failed to init sticky header component:', error);
+    } finally {
+      this.initInFlight.delete(leafId);
     }
   }
 
