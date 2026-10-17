@@ -89,12 +89,15 @@ export default class StickyHeadingsPlugin extends Plugin {
         const marker = `${this.manifest.dir}/debug.txt`;
         if (await adapter.exists(marker)) {
           document.body.dataset.stickyHeadingsDebug = '1';
-          // Serial queue closure over adapter.append — catch rejections silently.
-          let chain: Promise<void> = Promise.resolve();
+          const tracePath = `${this.manifest.dir}/debug-trace.jsonl`;
+          // Truncate per build — every line carries ms timestamps, so a fresh
+          // file per enabled-build keeps the trace unambiguous.
+          void adapter.write(tracePath, '').catch(() => {});
+          // Fire-and-forget per-line appends. A serial promise chain here
+          // black-holes every later line the moment one append stays pending;
+          // independent writes can never block each other.
           const sink = (line: string) => {
-            chain = chain
-              .then(() => adapter.append(`${this.manifest.dir}/debug-trace.jsonl`, line + '\n'))
-              .catch(() => {});
+            void adapter.append(tracePath, line + '\n').catch(() => {});
           };
           configureAnchorDebugSink(sink, this.manifest);
         }
@@ -235,6 +238,21 @@ export default class StickyHeadingsPlugin extends Plugin {
   }
 
   async healthCheckActiveLeaf() {
+    // Heartbeat: steady-state trace output proving whether init completes and
+    // components exist even when nothing else fires. Best-effort only.
+    try {
+      const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+      const leafId = view?.leaf?.id ?? null;
+      const item = leafId ? this.fileResolveMap.get(leafId) : undefined;
+      traceEvent('heartbeat', {
+        items: this.fileResolveMap.size,
+        leafId,
+        components: item?.headingEl?.stickyHeaderComponents?.length ?? 0,
+        headingsLen: item?.headings?.length ?? 0,
+      });
+    } catch {
+      // heartbeat must never break the health check
+    }
     try {
       const view = this.app.workspace.getActiveViewOfType(MarkdownView);
       if (!view) return;
@@ -937,6 +955,7 @@ export default class StickyHeadingsPlugin extends Plugin {
     if (!headings || headings.length === 0) return [];
 
     const shownHeadings = getShownHeadings(headings, view, this.settings);
+    traceEvent('retrieve-start', { path: file.path, shown: shownHeadings.length });
 
     const renderPromise = Promise.all(
       shownHeadings.map(async heading => {
@@ -971,7 +990,9 @@ export default class StickyHeadingsPlugin extends Plugin {
       }, 1500);
     });
 
-    return Promise.race([renderPromise, timeoutPromise]);
+    const result = await Promise.race([renderPromise, timeoutPromise]);
+    traceEvent('retrieve-done', { path: file.path, len: result.length });
+    return result;
   }
 
   onSettingChanged() {
@@ -1006,6 +1027,15 @@ export default class StickyHeadingsPlugin extends Plugin {
   }
 
   onunload() {
+    // The settings modal persists across plugin toggles; its left-behind pane
+    // stays bound to the destroyed plugin instance and absorbs slider events
+    // with no tracing. Closing it on unload forces a rebuild bound to the
+    // live instance.
+    try {
+      (this.app as unknown as { setting?: { close?: () => void } }).setting?.close?.();
+    } catch {
+      // settings modal may be gone at quit
+    }
     this.fileResolveMap.forEach((item, id) => {
       try {
         item?.headingEl?.removeStickyHeader?.();
