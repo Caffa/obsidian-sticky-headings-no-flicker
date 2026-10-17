@@ -90,9 +90,9 @@ export default class StickyHeadingsPlugin extends Plugin {
         if (await adapter.exists(marker)) {
           document.body.dataset.stickyHeadingsDebug = '1';
           const tracePath = `${this.manifest.dir}/debug-trace.jsonl`;
-          // Truncate per build — every line carries ms timestamps, so a fresh
-          // file per enabled-build keeps the trace unambiguous.
-          void adapter.write(tracePath, '').catch(() => {});
+          // Append-only: every onload/reload appends a fresh `trace-open`
+          // line, so prior sessions' lines survive as evidence of reload
+          // loops (e.g. lazy-plugins/hot-reload kill+revive cycles).
           // Fire-and-forget per-line appends. A serial promise chain here
           // black-holes every later line the moment one append stays pending;
           // independent writes can never block each other.
@@ -1027,6 +1027,15 @@ export default class StickyHeadingsPlugin extends Plugin {
   }
 
   onunload() {
+    // First line of unload: stamp WHEN we were torn down, before any cleanup
+    // can fail. onload → plugin-unload seconds later exposes reload loops
+    // (lazy-plugins / hot-reload) directly in debug-trace.jsonl. Own try/catch
+    // so tracing can never break unload.
+    try {
+      traceEvent('plugin-unload', { items: this.fileResolveMap.size });
+    } catch {
+      // ignore — tracing must never interfere with unload
+    }
     // The settings modal persists across plugin toggles; its left-behind pane
     // stays bound to the destroyed plugin instance and absorbs slider events
     // with no tracing. Closing it on unload forces a rebuild bound to the
