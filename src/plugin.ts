@@ -69,11 +69,48 @@ export default class StickyHeadingsPlugin extends Plugin {
     }
   }
 
-  private clearStickyDiagnostics() {
+  /**
+   * lazy-plugins / hot-reload disable→enable the plugin at every app start.
+   * The debug flag (`document.body.dataset.stickyHeadingsDebug`) is set from
+   * the marker file and is deliberately NEVER cleared on unload or map-empty:
+   * clearing it here blinded the tracer for the re-enabled instance, hiding
+   * every trace after the first lifecycle cycle.
+   */
+
+  /**
+   * lazy-plugins / hot-reload disable→enable the plugin at every app start.
+   * The debug flag (`document.body.dataset.stickyHeadingsDebug`) is set from
+   * the marker file and is deliberately NEVER cleared on unload or map-empty:
+   * clearing it here blinded the tracer for the re-enabled instance, hiding
+   * every trace after the first lifecycle cycle.
+   */
+
+  /**
+   * When the plugin is disabled→re-enabled mid-session (lazy-plugins at app
+   * start, hot-reload deploys) or a leaf's view is swapped while we were
+   * dead, `item.view` is stale: components keep rendering (font changes still
+   * apply via rootStyles) but rect reads hit the dead `view.contentEl` and
+   * `computeEffectiveTop` returns null — the position freezes forever. The
+   * leaf object itself is stable; `leaf.view` always points at the live view,
+   * so rebind from it before anything measures the stale DOM.
+   */
+  private rebindItemViewIfStale(id: string, item: FileResolveEntry): boolean {
     try {
-      delete document.body.dataset.stickyHeadingsDebug;
-    } catch {
-      // ignore
+      const liveView = item.view?.leaf?.view;
+      if (liveView && liveView !== item.view && liveView instanceof MarkdownView && liveView.getFile()) {
+        item.view = liveView;
+        item.container = liveView.contentEl;
+        if (document.body.dataset.stickyHeadingsDebug === '1') {
+          console.warn('[sticky-headings] rebound stale item.view from leaf', id);
+        }
+        return true;
+      }
+      return false;
+    } catch (error) {
+      if (document.body.dataset.stickyHeadingsDebug === '1') {
+        console.warn('[sticky-headings] rebindItemViewIfStale failed:', { id, error });
+      }
+      return false;
     }
   }
 
@@ -262,6 +299,15 @@ export default class StickyHeadingsPlugin extends Plugin {
       const item = this.fileResolveMap.get(leafId);
       if (!item) {
         this.initStickyHeaderComponent(view);
+        return;
+      }
+
+      // The active view may have been swapped while we held a stale item.view
+      // (lazy-plugins/hot-reload). Rebind, then let the full update rebuild
+      // mount targets against the live view; return so the watchdog below
+      // doesn't also fire against the stale reference.
+      if (this.rebindItemViewIfStale(leafId, item)) {
+        void this.handleComponentUpdate(item.view).catch(() => {});
         return;
       }
 
@@ -596,6 +642,13 @@ export default class StickyHeadingsPlugin extends Plugin {
     if (!id) return;
     const item = this.fileResolveMap.get(id);
     if (!item) return;
+    // Rebind before touching item.view: after a lazy-plugins/hot-reload
+    // reload or a view swap, item.view may reference a dead view whose
+    // contentEl reports zero rects (position frozen while font updates still
+    // applied). From here on, measure the item's live view, not the possibly
+    // stale parameter — the mount-target checks below already read item.view.
+    this.rebindItemViewIfStale(id, item);
+    ({ view } = item);
     if (item.handleUpdateInFlight) return;
     traceEvent('component-update', {
       leafId: id,
@@ -869,10 +922,6 @@ export default class StickyHeadingsPlugin extends Plugin {
       if (ids.length > 0) {
         this.checkFileResolveMap();
       }
-
-      if (this.fileResolveMap.size === 0) {
-        this.clearStickyDiagnostics();
-      }
     }
   }
 
@@ -940,10 +989,6 @@ export default class StickyHeadingsPlugin extends Plugin {
           this.fileResolveMap.delete(id);
         }
       });
-
-      if (this.fileResolveMap.size === 0) {
-        this.clearStickyDiagnostics();
-      }
     } catch (error) {
       console.warn('Failed to check file resolve map:', error);
     }
@@ -1004,6 +1049,10 @@ export default class StickyHeadingsPlugin extends Plugin {
       items: this.fileResolveMap.size,
     });
     this.fileResolveMap.forEach((item, leafId) => {
+      // lazy-plugins/hot-reload can leave item.view pointing at a dead view;
+      // rebinding first lets updateSettings + the follow-up full update run
+      // against the live DOM instead of freezing the position on null rects.
+      const rebound = this.rebindItemViewIfStale(leafId, item);
       if (item.headingEl) {
         item.headingEl.updateSettings(this.settings);
       }
@@ -1016,6 +1065,12 @@ export default class StickyHeadingsPlugin extends Plugin {
           console.warn('Failed to refresh anchor after setting change:', error);
         }
       }
+      if (rebound) {
+        // Fire-and-forget: handleComponentUpdate has its own in-flight mutex
+        // and re-runs mount-target drift, headings and refreshAnchor against
+        // the fresh view.
+        void this.handleComponentUpdate(item.view).catch(() => {});
+      }
     });
     if (this.statusBarEl) {
       if (this.settings.showInStatusBar) {
@@ -1027,65 +1082,75 @@ export default class StickyHeadingsPlugin extends Plugin {
   }
 
   onunload() {
-    // First line of unload: stamp WHEN we were torn down, before any cleanup
-    // can fail. onload → plugin-unload seconds later exposes reload loops
-    // (lazy-plugins / hot-reload) directly in debug-trace.jsonl. Own try/catch
-    // so tracing can never break unload.
+    // Outer guarantee: lazy-plugins awaits disablePluginAndSave(id) at every
+    // app start before re-enabling us. An exception escaping onunload would
+    // break that disable→enable cycle and leave the plugin half-unloaded.
+    // Nothing below is allowed to propagate — the inner try/catches stay as
+    // first-line defense, this one is the last resort.
     try {
-      traceEvent('plugin-unload', { items: this.fileResolveMap.size });
-    } catch {
-      // ignore — tracing must never interfere with unload
-    }
-    // The settings modal persists across plugin toggles; its left-behind pane
-    // stays bound to the destroyed plugin instance and absorbs slider events
-    // with no tracing. Closing it on unload forces a rebuild bound to the
-    // live instance.
-    try {
-      (this.app as unknown as { setting?: { close?: () => void } }).setting?.close?.();
-    } catch {
-      // settings modal may be gone at quit
-    }
-    this.fileResolveMap.forEach((item, id) => {
+      // First line of unload: stamp WHEN we were torn down, before any cleanup
+      // can fail. onload → plugin-unload seconds later exposes reload loops
+      // (lazy-plugins / hot-reload) directly in debug-trace.jsonl. Own try/catch
+      // so tracing can never break unload.
       try {
-        item?.headingEl?.removeStickyHeader?.();
+        traceEvent('plugin-unload', { items: this.fileResolveMap.size });
+      } catch {
+        // ignore — tracing must never interfere with unload
+      }
+      // The settings modal persists across plugin toggles; its left-behind pane
+      // stays bound to the destroyed plugin instance and absorbs slider events
+      // with no tracing. Closing it on unload forces a rebuild bound to the
+      // live instance.
+      try {
+        (this.app as unknown as { setting?: { close?: () => void } }).setting?.close?.();
+      } catch {
+        // settings modal may be gone at quit
+      }
+      this.fileResolveMap.forEach((item, id) => {
+        try {
+          item?.headingEl?.removeStickyHeader?.();
 
-        if (item?.layoutChangeEvent) {
-          this.app.workspace.offref(item.layoutChangeEvent);
+          if (item?.layoutChangeEvent) {
+            this.app.workspace.offref(item.layoutChangeEvent);
+          }
+
+          if (item?.scrollListener && item?.scrollListenerTarget) {
+            const useCapture = item.scrollListenerTarget === item.view?.contentEl;
+            item.scrollListenerTarget.removeEventListener('scroll', item.scrollListener, useCapture);
+          }
+
+          if (item?.retryTimer) {
+            window.clearTimeout(item.retryTimer);
+            item.retryTimer = undefined;
+          }
+
+          item.watchdogRecoveries = 0;
+          item.watchdogRecoveryWindowStart = undefined;
+
+          if (item?.view?.contentEl) {
+            delete item.view.contentEl.dataset.stickyScrollCapture;
+          }
+        } catch (error) {
+          console.warn(`Error unloading sticky header for leaf ${id}:`, error);
         }
+      });
 
-        if (item?.scrollListener && item?.scrollListenerTarget) {
-          const useCapture = item.scrollListenerTarget === item.view?.contentEl;
-          item.scrollListenerTarget.removeEventListener('scroll', item.scrollListener, useCapture);
-        }
-
-        if (item?.retryTimer) {
-          window.clearTimeout(item.retryTimer);
-          item.retryTimer = undefined;
-        }
-
-        item.watchdogRecoveries = 0;
-        item.watchdogRecoveryWindowStart = undefined;
-
-        if (item?.view?.contentEl) {
-          delete item.view.contentEl.dataset.stickyScrollCapture;
+      try {
+        this.statusBarItemEl?.removeStickyHeader?.();
+        this.statusBarItemEl = undefined;
+        if (this.statusBarEl && this.statusBarClickHandler) {
+          this.statusBarEl.removeEventListener('click', this.statusBarClickHandler);
         }
       } catch (error) {
-        console.warn(`Error unloading sticky header for leaf ${id}:`, error);
+        console.warn('Error unloading status bar item:', error);
       }
-    });
 
-    try {
-      this.statusBarItemEl?.removeStickyHeader?.();
-      this.statusBarItemEl = undefined;
-      if (this.statusBarEl && this.statusBarClickHandler) {
-        this.statusBarEl.removeEventListener('click', this.statusBarClickHandler);
-      }
+      this.fileResolveMap.clear();
     } catch (error) {
-      console.warn('Error unloading status bar item:', error);
+      if (document.body.dataset.stickyHeadingsDebug === '1') {
+        console.warn('[sticky-headings] onunload outer guard caught:', error);
+      }
     }
-
-    this.fileResolveMap.clear();
-    this.clearStickyDiagnostics();
   }
 
   async loadSettings() {
