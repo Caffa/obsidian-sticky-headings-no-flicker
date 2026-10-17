@@ -68,6 +68,11 @@
     // last good top instead of clobbering it with a fallback value.
     if (nextTop != null && nextTop !== effectiveTop) {
       effectiveTop = nextTop;
+      // Svelte's reactive style rewrite can die silently if any update throws
+      // during a shared flush (the scheduler's flush flag never resets, so no
+      // reactive statement ever re-runs). Write the position imperatively so
+      // the slider works regardless of the reactive pipeline's health.
+      main.style.top = `${nextTop}px`;
     }
   };
 
