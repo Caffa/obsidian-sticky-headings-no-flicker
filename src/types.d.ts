@@ -1,3 +1,4 @@
+import type { DebouncedFunc } from 'lodash';
 import type { MarkdownView, TFile, HeadingCache, EventRef } from 'obsidian';
 import type StickyHeaderComponent from './stickyHeader';
 
@@ -31,6 +32,8 @@ export interface FileResolveEntry {
   detectPosition?: ((event: Event, scroller: HTMLElement) => void) | null;
   retryTimer?: number;
   retryCount?: number;
+  // Pending mutex-aware dirty-flush retry (see flushDirtyLeaf).
+  dirtyFlushRetryTimer?: number;
   watchdogRecoveries?: number;
   watchdogRecoveryWindowStart?: number;
   watchdogRecovering?: boolean;
@@ -39,6 +42,10 @@ export interface FileResolveEntry {
   editMode: boolean;
   currentIndex: number;
   resolveRevision: number;
+  // Plan A+B equality gate + deferred layout update state.
+  lastHeadingSignature?: string;
+  dirty?: boolean;
+  debouncedLayoutUpdate?: DebouncedFunc<() => void>;
 }
 
 export interface Heading extends HeadingCache {
@@ -46,6 +53,12 @@ export interface Heading extends HeadingCache {
   offset: number;
   indentLevel: number;
   index: number;
+}
+
+export interface RetrieveHeadingsResult {
+  headings: Heading[];
+  /** True when the 1.5s MarkdownRenderer timeout won: titles are RAW unparsed heading text. */
+  timedOut: boolean;
 }
 
 declare module 'obsidian' {

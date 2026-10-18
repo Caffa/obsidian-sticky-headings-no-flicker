@@ -22,7 +22,7 @@ const classSnippet = (el: Element | null | undefined, maxLength = 80): string =>
 
 // Build nonce: bump this string per trace-mechanism change so a deployed
 // debug-trace.jsonl proves exactly which build wrote it.
-const TRACE_BUILD = 'trace6-compat';
+const TRACE_BUILD = 'trace8-ab-gate';
 
 // Serial line sink installed by `configureAnchorDebugSink`; null = file trace off.
 let anchorDebugSink: ((line: string) => void) | null = null;

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unnecessary-condition */
 import type { TFile } from 'obsidian';
 import { MarkdownView, Plugin } from 'obsidian';
-import type { FileResolveEntry, Heading, ISetting } from './types';
+import type { FileResolveEntry, Heading, ISetting, RetrieveHeadingsResult } from './types';
 import { Platform } from 'obsidian';
 import StickyHeadingsSetting, { defaultSettings } from './settings';
 import {
@@ -18,12 +18,13 @@ import {
 import StickyHeaderComponent, { resolveMountContainers } from './stickyHeader';
 import StatusBarItemComponent from './ui/statusBar/statusBarItem';
 import getShownHeadings, { trivial } from './utils/getShownHeadings';
-import { throttle } from 'lodash';
+import { throttle, debounce } from 'lodash';
 import { calcIndentLevels } from './utils/calcIndentLevels';
 import { makeExpectedHeadings } from './utils/makeExpectedHeadings';
 import { HeadingSuggester } from './ui/statusBar/suggester';
 import { animateScroll, computeScrollTop } from './utils/scroll';
 import { configureAnchorDebugSink, traceEvent } from './utils/anchorDebug';
+import { computeHeadingSignature } from './utils/headingSignature';
 import { getCachedTitle, invalidateMarkdownCacheForFile, setCachedTitle } from './utils/markdownCache';
 
 type FileResolveMap = Map<string, FileResolveEntry>;
@@ -180,6 +181,14 @@ export default class StickyHeadingsPlugin extends Plugin {
             setTimeout(() => {
               if (activeLeafId === this.lastActiveLeafId) {
                 this.checkFileResolveMap();
+                // Plan B: flush work deferred while this leaf sat in the
+                // background (resolve events marked it dirty instead of
+                // rebuilding). Inactive-leaf headers are invisible, but the
+                // freshly-shown leaf must not render stale headings.
+                const activeItem = activeLeafId ? this.fileResolveMap.get(activeLeafId) : undefined;
+                if (activeLeafId && activeItem?.dirty) {
+                  this.flushDirtyLeaf(activeItem, activeLeafId);
+                }
               }
             }, 100);
           })
@@ -234,9 +243,12 @@ export default class StickyHeadingsPlugin extends Plugin {
 
       try {
         this.registerInterval(
-          window.setInterval(() => {
-            void this.healthCheckActiveLeaf();
-          }, 5000)
+          window.setInterval(
+            () => {
+              void this.healthCheckActiveLeaf();
+            },
+            Platform.isMobile ? 30000 : 5000
+          )
         );
       } catch (error) {
         console.warn('Failed to register health check interval:', error);
@@ -485,6 +497,24 @@ export default class StickyHeadingsPlugin extends Plugin {
     return 0;
   }
 
+  /**
+   * Plan B: per-leaf layout-change coalescing. Obsidian fires layout-change
+   * in bursts (pane resizes, mode toggles) and each full update is an async
+   * retrieveHeadings + remount check. Leading+trailing debounce keeps the
+   * first reaction immediate and collapses the burst into one follow-up.
+   * The debounced fn owns the update work; event registration stays
+   * one-per-leaf so teardown can offref + cancel it.
+   */
+  private createDebouncedLayoutUpdate(view: MarkdownView) {
+    return debounce(
+      () => {
+        void this.handleComponentUpdate(view).catch(() => {});
+      },
+      300,
+      { leading: true, trailing: true }
+    );
+  }
+
   async initStickyHeaderComponent(view: MarkdownView) {
     // Serialize per-leaf init: layout-ready catch-up, checkFileResolveMap
     // timers, and the 5s health check can overlap for the same leaf id. Both
@@ -503,11 +533,11 @@ export default class StickyHeadingsPlugin extends Plugin {
       const file = view.getFile();
       const settings = this.settings ?? { ...defaultSettings };
       if (file && isMarkdownFile(file)) {
-        const headings = await this.retrieveHeadings(file, view);
+        const { headings } = await this.retrieveHeadings(file, view);
         if (!this.fileResolveMap.has(id)) {
           const headingEl = new StickyHeaderComponent(view, settings);
-          // eslint-disable-next-line @typescript-eslint/no-misused-promises
-          const layoutChangeEvent = this.app.workspace.on('layout-change', this.handleComponentUpdate.bind(this, view));
+          const debouncedLayoutUpdate = this.createDebouncedLayoutUpdate(view);
+          const layoutChangeEvent = this.app.workspace.on('layout-change', debouncedLayoutUpdate);
           const getExpected = makeExpectedHeadings(() => headings, this.settings.max, this.settings.mode);
           this.fileResolveMap.set(id, {
             resolve: true,
@@ -518,6 +548,9 @@ export default class StickyHeadingsPlugin extends Plugin {
             getExpectedHeadings: getExpected,
             headingEl,
             layoutChangeEvent,
+            debouncedLayoutUpdate,
+            // Seed the gate so the first resolve after init can hit the skip path.
+            lastHeadingSignature: computeHeadingSignature(file, this.app),
             editMode: isEditSourceMode(view),
             currentIndex: -1,
             resolveRevision: 0,
@@ -535,16 +568,17 @@ export default class StickyHeadingsPlugin extends Plugin {
               if (document.body.dataset.stickyHeadingsDebug === '1') {
                 console.warn('Failed to remove old sticky header on same-leaf file change:', e);
               }
+              // The old component is still mounted and working; never continue
+              // into reinit with a half-torn-down mount target.
+              return;
             }
+            item.debouncedLayoutUpdate?.cancel();
             if (item.layoutChangeEvent) {
               this.app.workspace.offref(item.layoutChangeEvent);
             }
             if (item.scrollListener && item.scrollListenerTarget) {
               const useCapture = item.scrollListenerTarget === item.view?.contentEl;
               item.scrollListenerTarget.removeEventListener('scroll', item.scrollListener, useCapture);
-            }
-            if (item.view?.contentEl) {
-              delete item.view.contentEl.dataset.stickyScrollCapture;
             }
             item.scrollListener = null;
             item.scrollListenerTarget = null;
@@ -554,12 +588,16 @@ export default class StickyHeadingsPlugin extends Plugin {
               window.clearTimeout(item.retryTimer);
               item.retryTimer = undefined;
             }
+            if (item.dirtyFlushRetryTimer) {
+              window.clearTimeout(item.dirtyFlushRetryTimer);
+              item.dirtyFlushRetryTimer = undefined;
+            }
 
             // Build new state after old teardown so shared DOM targets keep
             // their positioning-context classes throughout the swap.
             const newHeadingEl = new StickyHeaderComponent(view, settings);
-            // eslint-disable-next-line @typescript-eslint/no-misused-promises
-            const newLayoutChange = this.app.workspace.on('layout-change', this.handleComponentUpdate.bind(this, view));
+            const newDebouncedUpdate = this.createDebouncedLayoutUpdate(view);
+            const newLayoutChange = this.app.workspace.on('layout-change', newDebouncedUpdate);
 
             // Rebind everything to the (reused) view with the new file.
             item.view = view;
@@ -567,6 +605,7 @@ export default class StickyHeadingsPlugin extends Plugin {
             item.container = view.contentEl;
             item.editMode = isEditSourceMode(view);
             item.headings = headings;
+            item.lastHeadingSignature = computeHeadingSignature(file, this.app);
             item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, settings.max, settings.mode);
             item.currentIndex = -1;
             item.resolveRevision++;
@@ -574,6 +613,7 @@ export default class StickyHeadingsPlugin extends Plugin {
 
             item.headingEl = newHeadingEl;
             item.layoutChangeEvent = newLayoutChange;
+            item.debouncedLayoutUpdate = newDebouncedUpdate;
             this.registerEvent(newLayoutChange);
           }
         }
@@ -675,7 +715,7 @@ export default class StickyHeadingsPlugin extends Plugin {
       const liveFile = view.getFile() ?? item.file;
 
       // Refresh headings — layout changed, so offsets need recomputing
-      const headings = await this.retrieveHeadings(liveFile, view);
+      const { headings } = await this.retrieveHeadings(liveFile, view);
       if (this.fileResolveMap.get(id) !== item) {
         return;
       }
@@ -692,6 +732,14 @@ export default class StickyHeadingsPlugin extends Plugin {
         }
       } else {
         item.headings = headings;
+        // Refresh the gate alongside the committed headings so layout-driven
+        // recomputes keep it valid — a stale signature would wrongly skip later
+        // resolves for genuinely-changed heading structures. This must stay
+        // INSIDE the commit branch: the preserved-fallback branch above left
+        // item.headings describing the OLD shown state, so storing the fresh
+        // signature there would make every later resolve hit the skip gate
+        // with stale headers frozen forever.
+        item.lastHeadingSignature = computeHeadingSignature(liveFile, this.app);
       }
       item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, this.settings.max, this.settings.mode);
 
@@ -720,10 +768,6 @@ export default class StickyHeadingsPlugin extends Plugin {
       if (item.scrollListener && item.scrollListenerTarget) {
         const useCapture = item.scrollListenerTarget === item.view.contentEl;
         item.scrollListenerTarget.removeEventListener('scroll', item.scrollListener, useCapture);
-      }
-
-      if (item.view?.contentEl) {
-        delete item.view.contentEl.dataset.stickyScrollCapture;
       }
 
       item.editMode = isEditSourceMode(item.view);
@@ -767,7 +811,6 @@ export default class StickyHeadingsPlugin extends Plugin {
           }
         };
         scrollCaptureTarget.addEventListener('scroll', newScrollListener, true);
-        scrollCaptureTarget.dataset.stickyScrollCapture = '1';
 
         item.scrollListener = newScrollListener;
         item.scrollListenerTarget = scrollCaptureTarget;
@@ -864,16 +907,6 @@ export default class StickyHeadingsPlugin extends Plugin {
     }
   }
 
-  handleEditorChange(file: TFile | null) {
-    if (file && isMarkdownFile(file)) {
-      this.fileResolveMap.forEach(item => {
-        if (item.file.path === file.path) {
-          item.resolve = false;
-        }
-      });
-    }
-  }
-
   async handleResolve(file: TFile) {
     if (isMarkdownFile(file)) {
       const ids: string[] = [];
@@ -887,14 +920,49 @@ export default class StickyHeadingsPlugin extends Plugin {
           }
 
           if (item.file.path === file.path) {
+            // Plan A equality gate: the signature is computed BEFORE the cache
+            // invalidation. Resolve fires for every metadata pass, but only a
+            // heading-structure change needs the parse + rebuild.
+            const sig = computeHeadingSignature(file, this.app);
+            const activeLeafId = this.app.workspace.getActiveViewOfType(MarkdownView)?.leaf?.id;
+            const isActiveLeaf = id === activeLeafId;
+            if (sig === item.lastHeadingSignature && item.headings?.length) {
+              traceEvent('resolve-skip', { path: file.path, leafId: id, active: isActiveLeaf });
+              if (!item.resolve) {
+                item.resolve = true;
+                ids.push(id);
+              }
+              continue;
+            }
+            // Plan B background gating: inactive-leaf headers are invisible,
+            // so defer the rebuild until the leaf is activated again.
+            if (!isActiveLeaf) {
+              item.dirty = true;
+              item.lastHeadingSignature = sig;
+              traceEvent('leaf-dirty-defer', { path: file.path, leafId: id });
+              if (!item.resolve) {
+                item.resolve = true;
+                ids.push(id);
+              }
+              continue;
+            }
+            traceEvent('resolve-rebuild', { path: file.path, leafId: id });
             // Refresh headings — file content changed
             const myRev = ++item.resolveRevision;
             invalidateMarkdownCacheForFile(this.markdownCache, file);
-            const headings = await this.retrieveHeadings(file, item.view);
+            const { headings, timedOut } = await this.retrieveHeadings(file, item.view);
             if (myRev !== item.resolveRevision) {
               return;
             }
             item.headings = headings;
+            // Store the gate signature only for a fully-parsed commit. The
+            // 1.5s timeout fallback commits RAW unparsed titles; leaving the
+            // OLD signature untouched then makes the next resolve gate-miss
+            // and self-heal via a re-parse. (Storing before/without parsed
+            // headings would freeze the raw titles behind the skip gate.)
+            if (!timedOut) {
+              item.lastHeadingSignature = sig;
+            }
             item.getExpectedHeadings = makeExpectedHeadings(
               () => item.headings,
               this.settings?.max ?? defaultSettings.max,
@@ -923,6 +991,34 @@ export default class StickyHeadingsPlugin extends Plugin {
         this.checkFileResolveMap();
       }
     }
+  }
+
+  /**
+   * Flush a leaf's deferred (dirty) rebuild. Mutex-aware: handleComponentUpdate
+   * silently no-ops while an update is already in flight (its retrieveHeadings
+   * can hold the mutex up to ~1.5s), so the dirty flag is only cleared once the
+   * update actually starts. While busy, keep `dirty` set and retry after a
+   * short window — guarded against stacking, and aborted if the leaf was
+   * replaced or went inactive again (the next activation re-flushes).
+   */
+  private flushDirtyLeaf(item: FileResolveEntry, leafId: string) {
+    if (item.handleUpdateInFlight) {
+      if (item.dirtyFlushRetryTimer) return; // retry already pending
+      traceEvent('leaf-dirty-flush-retry', { leafId, path: item.file?.path ?? null });
+      item.dirtyFlushRetryTimer = window.setTimeout(() => {
+        item.dirtyFlushRetryTimer = undefined;
+        // Same mutex-aware decision as the initial flush: re-mark (dirty was
+        // never cleared) + re-schedule if still busy, else clear + update.
+        if (this.fileResolveMap.get(leafId) !== item) return;
+        if (this.app.workspace.getActiveViewOfType(MarkdownView)?.leaf?.id !== leafId) return;
+        if (!item.dirty) return; // already flushed
+        this.flushDirtyLeaf(item, leafId);
+      }, 300);
+      return;
+    }
+    item.dirty = false;
+    traceEvent('leaf-dirty-flush', { leafId, path: item.file?.path ?? null });
+    void this.handleComponentUpdate(item.view).catch(() => {});
   }
 
   private scheduleScrollerRetry(id: string, view: MarkdownView) {
@@ -967,6 +1063,7 @@ export default class StickyHeadingsPlugin extends Plugin {
           const item = this.fileResolveMap.get(id);
           if (item) {
             item.headingEl?.removeStickyHeader?.();
+            item.debouncedLayoutUpdate?.cancel();
 
             if (item.layoutChangeEvent) {
               this.app.workspace.offref(item.layoutChangeEvent);
@@ -981,9 +1078,9 @@ export default class StickyHeadingsPlugin extends Plugin {
               window.clearTimeout(item.retryTimer);
               item.retryTimer = undefined;
             }
-
-            if (item.view?.contentEl) {
-              delete item.view.contentEl.dataset.stickyScrollCapture;
+            if (item.dirtyFlushRetryTimer) {
+              window.clearTimeout(item.dirtyFlushRetryTimer);
+              item.dirtyFlushRetryTimer = undefined;
             }
           }
           this.fileResolveMap.delete(id);
@@ -994,10 +1091,10 @@ export default class StickyHeadingsPlugin extends Plugin {
     }
   }
 
-  async retrieveHeadings(file: TFile, view: MarkdownView): Promise<Heading[]> {
+  async retrieveHeadings(file: TFile, view: MarkdownView): Promise<RetrieveHeadingsResult> {
     const headings = getHeadings(file, this.app);
 
-    if (!headings || headings.length === 0) return [];
+    if (!headings || headings.length === 0) return { headings: [], timedOut: false };
 
     const shownHeadings = getShownHeadings(headings, view, this.settings);
     traceEvent('retrieve-start', { path: file.path, shown: shownHeadings.length });
@@ -1026,8 +1123,11 @@ export default class StickyHeadingsPlugin extends Plugin {
       })
     );
 
+    let timeoutId = 0;
+    let timedOut = false;
     const timeoutPromise = new Promise<Heading[]>(resolve => {
-      window.setTimeout(() => {
+      timeoutId = window.setTimeout(() => {
+        timedOut = true;
         if (document.body.dataset.stickyHeadingsDebug === '1') {
           console.warn('[sticky-headings] retrieveHeadings timeout', { file: file.path, count: headings.length });
         }
@@ -1036,8 +1136,17 @@ export default class StickyHeadingsPlugin extends Plugin {
     });
 
     const result = await Promise.race([renderPromise, timeoutPromise]);
-    traceEvent('retrieve-done', { path: file.path, len: result.length });
-    return result;
+    // Defuse whichever side lost the race: render won → stop the timer;
+    // timeout won → the render keeps running (its per-heading setCachedTitle
+    // writes still land in markdownCache) but its result goes unused, and a
+    // rejection must never surface as unhandled.
+    window.clearTimeout(timeoutId);
+    void renderPromise.catch(() => {});
+    traceEvent('retrieve-done', { path: file.path, len: result.length, timedOut });
+    // `timedOut` lets callers distinguish a fully-parsed result from the RAW
+    // unparsed-title fallback — an equality-gate commit must never treat the
+    // fallback as final (see handleResolve).
+    return { headings: result, timedOut };
   }
 
   onSettingChanged() {
@@ -1049,6 +1158,9 @@ export default class StickyHeadingsPlugin extends Plugin {
       items: this.fileResolveMap.size,
     });
     this.fileResolveMap.forEach((item, leafId) => {
+      // max/mode change which headings are shown → drop the gate signature so
+      // the next resolve for each file recomputes once instead of skipping.
+      item.lastHeadingSignature = undefined;
       // lazy-plugins/hot-reload can leave item.view pointing at a dead view;
       // rebinding first lets updateSettings + the follow-up full update run
       // against the live DOM instead of freezing the position on null rects.
@@ -1109,6 +1221,7 @@ export default class StickyHeadingsPlugin extends Plugin {
       this.fileResolveMap.forEach((item, id) => {
         try {
           item?.headingEl?.removeStickyHeader?.();
+          item?.debouncedLayoutUpdate?.cancel();
 
           if (item?.layoutChangeEvent) {
             this.app.workspace.offref(item.layoutChangeEvent);
@@ -1123,13 +1236,13 @@ export default class StickyHeadingsPlugin extends Plugin {
             window.clearTimeout(item.retryTimer);
             item.retryTimer = undefined;
           }
+          if (item?.dirtyFlushRetryTimer) {
+            window.clearTimeout(item.dirtyFlushRetryTimer);
+            item.dirtyFlushRetryTimer = undefined;
+          }
 
           item.watchdogRecoveries = 0;
           item.watchdogRecoveryWindowStart = undefined;
-
-          if (item?.view?.contentEl) {
-            delete item.view.contentEl.dataset.stickyScrollCapture;
-          }
         } catch (error) {
           console.warn(`Error unloading sticky header for leaf ${id}:`, error);
         }
