@@ -64,7 +64,9 @@ export default class StickyHeadingsPlugin extends Plugin {
         retryCount: item.retryCount ?? 0,
         hasScrollListener: !!item.scrollListener,
       };
-      console.warn('[sticky-headings] diag', diag);
+      if (document.body.dataset.stickyHeadingsDebug === '1') {
+        console.warn('[sticky-headings] diag', diag);
+      }
     } catch (error) {
       console.warn('[sticky-headings] diag failed:', error);
     }
@@ -366,7 +368,9 @@ export default class StickyHeadingsPlugin extends Plugin {
         return;
       }
 
-      console.warn('[sticky-headings] healthCheck recover leaf', leafId);
+      if (document.body.dataset.stickyHeadingsDebug === '1') {
+        console.warn('[sticky-headings] healthCheck recover leaf', leafId);
+      }
       item.watchdogRecovering = true;
       try {
         await this.handleComponentUpdate(view);
@@ -533,7 +537,15 @@ export default class StickyHeadingsPlugin extends Plugin {
       const file = view.getFile();
       const settings = this.settings ?? { ...defaultSettings };
       if (file && isMarkdownFile(file)) {
-        const { headings } = await this.retrieveHeadings(file, view);
+        // Already initialized for the same file: nothing to (re)init. Background
+        // dirty-flush is handled by the active-leaf-change handler, and health
+        // issues are handled by the health-check watchdog.
+        const existing = this.fileResolveMap.get(id);
+        if (existing && existing.file?.path === file.path) {
+          return;
+        }
+
+        const { headings, timedOut } = await this.retrieveHeadings(file, view);
         if (!this.fileResolveMap.has(id)) {
           const headingEl = new StickyHeaderComponent(view, settings);
           const debouncedLayoutUpdate = this.createDebouncedLayoutUpdate(view);
@@ -549,8 +561,10 @@ export default class StickyHeadingsPlugin extends Plugin {
             headingEl,
             layoutChangeEvent,
             debouncedLayoutUpdate,
-            // Seed the gate so the first resolve after init can hit the skip path.
-            lastHeadingSignature: computeHeadingSignature(file, this.app),
+            // Seed the gate so the first resolve after init can hit the skip path,
+            // but only when the retrieve did not time out (raw titles must stay
+            // gate-open until a healthy resolve self-heals).
+            lastHeadingSignature: !timedOut ? computeHeadingSignature(file, this.app) : undefined,
             editMode: isEditSourceMode(view),
             currentIndex: -1,
             resolveRevision: 0,
@@ -605,7 +619,7 @@ export default class StickyHeadingsPlugin extends Plugin {
             item.container = view.contentEl;
             item.editMode = isEditSourceMode(view);
             item.headings = headings;
-            item.lastHeadingSignature = computeHeadingSignature(file, this.app);
+            item.lastHeadingSignature = !timedOut ? computeHeadingSignature(file, this.app) : undefined;
             item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, settings.max, settings.mode);
             item.currentIndex = -1;
             item.resolveRevision++;
@@ -615,6 +629,8 @@ export default class StickyHeadingsPlugin extends Plugin {
             item.layoutChangeEvent = newLayoutChange;
             item.debouncedLayoutUpdate = newDebouncedUpdate;
             this.registerEvent(newLayoutChange);
+            // Work was just completed for this leaf; don't re-flush it on next activation.
+            item.dirty = false;
           }
         }
         await this.handleComponentUpdate(view);
@@ -715,7 +731,7 @@ export default class StickyHeadingsPlugin extends Plugin {
       const liveFile = view.getFile() ?? item.file;
 
       // Refresh headings — layout changed, so offsets need recomputing
-      const { headings } = await this.retrieveHeadings(liveFile, view);
+      const { headings, timedOut } = await this.retrieveHeadings(liveFile, view);
       if (this.fileResolveMap.get(id) !== item) {
         return;
       }
@@ -738,8 +754,12 @@ export default class StickyHeadingsPlugin extends Plugin {
         // INSIDE the commit branch: the preserved-fallback branch above left
         // item.headings describing the OLD shown state, so storing the fresh
         // signature there would make every later resolve hit the skip gate
-        // with stale headers frozen forever.
-        item.lastHeadingSignature = computeHeadingSignature(liveFile, this.app);
+        // with stale headers frozen forever. With an offset-invariant gate,
+        // a timed-out retrieve must also leave the gate open so the next
+        // healthy resolve self-heals instead of freezing raw titles.
+        if (!timedOut) {
+          item.lastHeadingSignature = computeHeadingSignature(liveFile, this.app);
+        }
       }
       item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, this.settings.max, this.settings.mode);
 
@@ -935,10 +955,13 @@ export default class StickyHeadingsPlugin extends Plugin {
               continue;
             }
             // Plan B background gating: inactive-leaf headers are invisible,
-            // so defer the rebuild until the leaf is activated again.
+            // so defer the rebuild until the leaf is activated again. Do NOT
+            // store the signature here: this branch defers retrieve+commit,
+            // so storing sig with no commit behind it would freeze subsequent
+            // resolves behind the skip gate. The flush commit stores a fresh,
+            // commit-backed signature.
             if (!isActiveLeaf) {
               item.dirty = true;
-              item.lastHeadingSignature = sig;
               traceEvent('leaf-dirty-defer', { path: file.path, leafId: id });
               if (!item.resolve) {
                 item.resolve = true;
@@ -1032,7 +1055,9 @@ export default class StickyHeadingsPlugin extends Plugin {
     const MAX_RETRIES = 20;
     if (item.retryCount > MAX_RETRIES) return;
     const delay = Math.min(100 + item.retryCount ** 2 * 10, 3500);
-    console.warn('[sticky-headings] scroller retry', { leafId: id, retryCount: item.retryCount });
+    if (document.body.dataset.stickyHeadingsDebug === '1') {
+      console.warn('[sticky-headings] scroller retry', { leafId: id, retryCount: item.retryCount });
+    }
     item.retryTimer = window.setTimeout(() => {
       item.retryTimer = undefined;
       if (!this.fileResolveMap.has(id)) return;
