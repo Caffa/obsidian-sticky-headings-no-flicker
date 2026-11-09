@@ -44,6 +44,9 @@ export interface FileResolveEntry {
   resolveRevision: number;
   // Plan A+B equality gate + deferred layout update state.
   lastHeadingSignature?: string;
+  // Position-layer counterpart of lastHeadingSignature (deliberately
+  // offset-invariant): catches paste reflows with unchanged heading structure.
+  lastOffsetSignature?: string;
   dirty?: boolean;
   debouncedLayoutUpdate?: DebouncedFunc<() => void>;
 }

@@ -24,7 +24,7 @@ import { makeExpectedHeadings } from './utils/makeExpectedHeadings';
 import { HeadingSuggester } from './ui/statusBar/suggester';
 import { animateScroll, computeScrollTop } from './utils/scroll';
 import { configureAnchorDebugSink, traceEvent } from './utils/anchorDebug';
-import { computeHeadingSignature } from './utils/headingSignature';
+import { computeHeadingSignature, computeOffsetSignature } from './utils/headingSignature';
 import { getCachedTitle, invalidateMarkdownCacheForFile, setCachedTitle } from './utils/markdownCache';
 import { claimOrUseHeadingCore, getHeadingCoreApi, type HeadingCoreApi } from './utils/headingCore';
 
@@ -592,6 +592,7 @@ export default class StickyHeadingsPlugin extends Plugin {
             // but only when the retrieve did not time out (raw titles must stay
             // gate-open until a healthy resolve self-heals).
             lastHeadingSignature: !timedOut ? computeHeadingSignature(file, this.app) : undefined,
+            lastOffsetSignature: !timedOut ? computeOffsetSignature(headings) : undefined,
             editMode: isEditSourceMode(view),
             currentIndex: -1,
             resolveRevision: 0,
@@ -647,6 +648,7 @@ export default class StickyHeadingsPlugin extends Plugin {
             item.editMode = isEditSourceMode(view);
             item.headings = headings;
             item.lastHeadingSignature = !timedOut ? computeHeadingSignature(file, this.app) : undefined;
+            item.lastOffsetSignature = !timedOut ? computeOffsetSignature(headings) : undefined;
             item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, settings.max, settings.mode);
             item.currentIndex = -1;
             item.resolveRevision++;
@@ -786,6 +788,7 @@ export default class StickyHeadingsPlugin extends Plugin {
         // healthy resolve self-heals instead of freezing raw titles.
         if (!timedOut) {
           item.lastHeadingSignature = computeHeadingSignature(liveFile, this.app);
+          item.lastOffsetSignature = computeOffsetSignature(headings);
         }
       }
       item.getExpectedHeadings = makeExpectedHeadings(() => item.headings, this.settings.max, this.settings.mode);
@@ -911,18 +914,27 @@ export default class StickyHeadingsPlugin extends Plugin {
             titleMap.set(key, h.title);
           }
         }
+        let allTitlesCached = true;
         const headings = freshHeadings.map(h => {
           if (item.file && h.position) {
             const key = `${item.file.path}::${h.position.start.offset}`;
+            if (titleMap.get(key) === undefined) {
+              allTitlesCached = false;
+            }
             return {
               ...h,
               title: titleMap.get(key) || h.title,
             };
           }
+          allTitlesCached = false;
           return h;
         });
         // Update cache with fresh offsets + preserved titles
         item.headings = headings;
+        // Only stamp the offset gate when every title came from the cache; a
+        // titleMap miss means the commit contains raw unparsed titles and must
+        // leave the gate open so a later healthy resolve/re-sync can heal it.
+        item.lastOffsetSignature = allTitlesCached ? computeOffsetSignature(headings) : undefined;
 
         const headingsInView = headings.filter(heading => heading.offset < scrollTop + stuckHeaderHeight);
         let findalHeadings: Heading[] = [];
@@ -974,7 +986,24 @@ export default class StickyHeadingsPlugin extends Plugin {
             const activeLeafId = this.app.workspace.getActiveViewOfType(MarkdownView)?.leaf?.id;
             const isActiveLeaf = id === activeLeafId;
             if (sig === item.lastHeadingSignature && item.headings?.length) {
-              traceEvent('resolve-skip', { path: file.path, leafId: id, active: isActiveLeaf });
+              // Title structure unchanged, but a paste can shift every downstream
+              // offset with zero heading-structure change (the gate is deliberately
+              // offset-invariant) — and no scroll event fires for a paste.
+              const freshOffsetSig = computeOffsetSignature(getHeadings(file, this.app));
+              if (freshOffsetSig === item.lastOffsetSignature) {
+                traceEvent('resolve-skip', { path: file.path, leafId: id, active: isActiveLeaf });
+              } else if (!isActiveLeaf) {
+                // Background leaves are invisible; activation's dirty-flush →
+                // handleComponentUpdate commits fresh state and re-stamps the gate.
+                traceEvent('resolve-skip-offset-deferred', { path: file.path, leafId: id });
+              } else if (item.handleUpdateInFlight || this.initInFlight.has(id)) {
+                // A full update/init will commit fresh state + re-stamp both gates;
+                // stacking our snapshot on top would risk a stale overwrite.
+                traceEvent('resolve-skip-offset-busy', { path: file.path, leafId: id });
+              } else {
+                traceEvent('resolve-offset-resync-request', { path: file.path, leafId: id });
+                void this.resyncActiveLeafOffsets(id, file, item).catch(() => {});
+              }
               if (!item.resolve) {
                 item.resolve = true;
                 ids.push(id);
@@ -1012,6 +1041,7 @@ export default class StickyHeadingsPlugin extends Plugin {
             // headings would freeze the raw titles behind the skip gate.)
             if (!timedOut) {
               item.lastHeadingSignature = sig;
+              item.lastOffsetSignature = computeOffsetSignature(headings);
             }
             item.getExpectedHeadings = makeExpectedHeadings(
               () => item.headings,
@@ -1039,6 +1069,47 @@ export default class StickyHeadingsPlugin extends Plugin {
       }
       if (ids.length > 0) {
         this.checkFileResolveMap();
+      }
+    }
+  }
+
+  /**
+   * Light offset-shift re-sync (title gate matched, offsets moved: e.g. a
+   * paste that reflows text without changing heading structure). Skips
+   * invalidateMarkdownCacheForFile entirely — titles are unchanged, so the
+   * text-keyed warm cache restores parsed titles that the offset-keyed
+   * titleMap lost. Never increments resolveRevision (snapshot semantics);
+   * any superseding rebuild bumps the revision and voids this snapshot.
+   */
+  private async resyncActiveLeafOffsets(leafId: string, file: TFile, item: FileResolveEntry) {
+    try {
+      if (this.fileResolveMap.get(leafId) !== item) return;
+      if (item.view?.getFile?.()?.path !== file.path) return;
+      const scroller = getScroller(item.view); // active leaf ⇒ visible bar; re-render now
+      const myRev = item.resolveRevision;
+      const { headings, timedOut } = await this.retrieveHeadings(file, item.view);
+      if (this.fileResolveMap.get(leafId) !== item || myRev !== item.resolveRevision) {
+        return; // replaced/superseded — a stronger path owns the commit
+      }
+      if (headings.length === 0 && item.headings?.length > 0) return; // empty-preserve mirror
+      item.headings = headings;
+      if (!timedOut) {
+        item.lastOffsetSignature = computeOffsetSignature(headings);
+      }
+      item.getExpectedHeadings = makeExpectedHeadings(
+        () => item.headings,
+        this.settings?.max ?? defaultSettings.max,
+        this.settings?.mode ?? defaultSettings.mode
+      );
+      traceEvent('resolve-offset-resync', { path: file.path, leafId, count: headings.length, timedOut });
+      if (scroller) {
+        this.setHeadingsInView(scroller, item);
+      } else {
+        this.updateHeadings(file, item.view, item); // scrollerless fallback keeps the bar populated
+      }
+    } catch (error) {
+      if (document.body.dataset.stickyHeadingsDebug === '1') {
+        console.warn('[sticky-headings] offset resync failed:', { leafId, file: file?.path, error });
       }
     }
   }
@@ -1210,9 +1281,10 @@ export default class StickyHeadingsPlugin extends Plugin {
       items: this.fileResolveMap.size,
     });
     this.fileResolveMap.forEach((item, leafId) => {
-      // max/mode change which headings are shown → drop the gate signature so
+      // max/mode change which headings are shown → drop the gate signatures so
       // the next resolve for each file recomputes once instead of skipping.
       item.lastHeadingSignature = undefined;
+      item.lastOffsetSignature = undefined;
       // lazy-plugins/hot-reload can leave item.view pointing at a dead view;
       // rebinding first lets updateSettings + the follow-up full update run
       // against the live DOM instead of freezing the position on null rects.

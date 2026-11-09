@@ -1,4 +1,4 @@
-import type { App, TFile } from 'obsidian';
+import type { App, HeadingCache, TFile } from 'obsidian';
 
 /**
  * Build a stable signature for the current heading structure of a file.
@@ -22,4 +22,25 @@ export function computeHeadingSignature(file: TFile, app: App): string {
     return '';
   }
   return headings.map(h => `${h.level}|${h.heading}`).join('\n');
+}
+
+/**
+ * Position-layer counterpart of {@link computeHeadingSignature}. The title
+ * gate is deliberately offset-invariant (since 2.4.1) so normal edits don't
+ * miss on every keystroke, but that creates a blind spot: pasting text can
+ * shift every downstream heading start offset with zero heading-structure
+ * change, no scroll event fires, and the resolve skip gate stays closed. This
+ * signature exposes exactly the excluded dimension (`line:offset` per
+ * heading) so those reflows remain detectable.
+ */
+export function computeOffsetSignature(headings: HeadingCache[] | null | undefined): string {
+  if (!headings || headings.length === 0) {
+    return '';
+  }
+  return (
+    headings
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+      .map(h => `${h.position?.start?.line ?? -1}:${h.position?.start?.offset ?? -1}`)
+      .join('\n')
+  );
 }
