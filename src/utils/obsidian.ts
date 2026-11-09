@@ -1,6 +1,7 @@
 import type { App, TAbstractFile } from 'obsidian';
 import { TFile, MarkdownView, MarkdownRenderer } from 'obsidian';
 import type { ISetting } from 'src/types';
+import { getHeadingCoreApi } from './headingCore';
 
 export function isMarkdownFile(file: TFile | TAbstractFile) {
   if (!(file instanceof TFile)) {
@@ -13,6 +14,14 @@ const warnedPaths = new Set<string>();
 
 export function getHeadings(file: TFile, app: App) {
   try {
+    const core = getHeadingCoreApi();
+    if (core) {
+      const coreHeadings = core.getRawHeadings(file);
+      if (coreHeadings.length > 0) {
+        return coreHeadings;
+      }
+    }
+
     const cache = app.metadataCache.getFileCache(file);
 
     if (cache?.headings) {

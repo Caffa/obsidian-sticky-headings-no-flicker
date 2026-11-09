@@ -26,6 +26,7 @@ import { animateScroll, computeScrollTop } from './utils/scroll';
 import { configureAnchorDebugSink, traceEvent } from './utils/anchorDebug';
 import { computeHeadingSignature } from './utils/headingSignature';
 import { getCachedTitle, invalidateMarkdownCacheForFile, setCachedTitle } from './utils/markdownCache';
+import { claimOrUseHeadingCore, getHeadingCoreApi, type HeadingCoreApi } from './utils/headingCore';
 
 type FileResolveMap = Map<string, FileResolveEntry>;
 
@@ -37,6 +38,8 @@ export default class StickyHeadingsPlugin extends Plugin {
   statusBarEl: HTMLElement | undefined;
   statusBarClickHandler: (() => void) | undefined;
   markdownCache: Map<string, string> = new Map();
+  headingCore: HeadingCoreApi | null = null;
+  headingCoreIsOwner = false;
   private lastActiveLeafId: string | null = null;
   // Per-leaf init serialization (same string keying as fileResolveMap).
   // Prevents concurrent initStickyHeaderComponent calls for the same leaf from
@@ -153,6 +156,25 @@ export default class StickyHeadingsPlugin extends Plugin {
       this.settings = { ...defaultSettings };
     }
 
+    // Adopt or claim the shared heading core. Sticky headings has the highest
+    // priority, so when both plugins are installed it owns the computation and
+    // Current Folder Notes depends on it.
+    try {
+      const { api, isOwner } = claimOrUseHeadingCore(this, 'sticky-headings-no-flicker', 1, {
+        onResolve: file => {
+          void this.handleResolve(file).catch(error => {
+            if (document.body.dataset.stickyHeadingsDebug === '1') {
+              console.warn('[sticky-headings] handleResolve rejected:', error);
+            }
+          });
+        },
+      });
+      this.headingCore = api;
+      this.headingCoreIsOwner = isOwner;
+    } catch (error) {
+      console.warn('Failed to claim heading core, using local flow:', error);
+    }
+
     try {
       try {
         this.initStatusBarItem();
@@ -223,18 +245,23 @@ export default class StickyHeadingsPlugin extends Plugin {
         console.warn('Failed to register file-open event:', error);
       }
 
-      try {
-        this.registerEvent(
-          this.app.metadataCache.on('resolve', file => {
-            void this.handleResolve(file).catch(error => {
-              if (document.body.dataset.stickyHeadingsDebug === '1') {
-                console.warn('[sticky-headings] handleResolve rejected:', error);
-              }
-            });
-          })
-        );
-      } catch (error) {
-        console.warn('Failed to register metadata resolve event:', error);
+      // When this plugin owns the heading core, metadata resolve events are
+      // routed through the core's onResolve hook (registered in claim above).
+      // Only register the legacy direct handler when we are NOT the owner.
+      if (!this.headingCoreIsOwner) {
+        try {
+          this.registerEvent(
+            this.app.metadataCache.on('resolve', file => {
+              void this.handleResolve(file).catch(error => {
+                if (document.body.dataset.stickyHeadingsDebug === '1') {
+                  console.warn('[sticky-headings] handleResolve rejected:', error);
+                }
+              });
+            })
+          );
+        } catch (error) {
+          console.warn('Failed to register metadata resolve event:', error);
+        }
       }
 
       try {
@@ -1281,6 +1308,18 @@ export default class StickyHeadingsPlugin extends Plugin {
         }
       } catch (error) {
         console.warn('Error unloading status bar item:', error);
+      }
+
+      // Release shared heading core ownership if we held it
+      try {
+        const liveCore = getHeadingCoreApi();
+        if (this.headingCoreIsOwner && this.headingCore && this.headingCore === liveCore) {
+          this.headingCore.release();
+        }
+      } catch (error) {
+        if (document.body.dataset.stickyHeadingsDebug === '1') {
+          console.warn('[sticky-headings] heading core release failed:', error);
+        }
       }
 
       this.fileResolveMap.clear();
