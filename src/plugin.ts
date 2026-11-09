@@ -839,6 +839,12 @@ export default class StickyHeadingsPlugin extends Plugin {
 
       if (scroller) {
         this.setHeadingsInView(scroller, item);
+        // A timed-out retrieval committed raw titles at fresh offsets; the
+        // render above re-stamps the offset gate from titleMap hits, so re-open
+        // the gate here or the raw titles freeze behind it.
+        if (timedOut) {
+          item.lastOffsetSignature = undefined;
+        }
       }
 
       // Attach scroll listener to view.contentEl in capture phase so we never
@@ -993,8 +999,9 @@ export default class StickyHeadingsPlugin extends Plugin {
               if (freshOffsetSig === item.lastOffsetSignature) {
                 traceEvent('resolve-skip', { path: file.path, leafId: id, active: isActiveLeaf });
               } else if (!isActiveLeaf) {
-                // Background leaves are invisible; activation's dirty-flush →
-                // handleComponentUpdate commits fresh state and re-stamps the gate.
+                // Background leaves are invisible; flag dirty so the next
+                // activation flushes a full update that re-stamps both gates.
+                item.dirty = true;
                 traceEvent('resolve-skip-offset-deferred', { path: file.path, leafId: id });
               } else if (item.handleUpdateInFlight || this.initInFlight.has(id)) {
                 // A full update/init will commit fresh state + re-stamp both gates;
@@ -1085,7 +1092,7 @@ export default class StickyHeadingsPlugin extends Plugin {
     try {
       if (this.fileResolveMap.get(leafId) !== item) return;
       if (item.view?.getFile?.()?.path !== file.path) return;
-      const scroller = getScroller(item.view); // active leaf ⇒ visible bar; re-render now
+      const scroller = getScroller(item.view); // active leaf → visible bar; re-render now
       const myRev = item.resolveRevision;
       const { headings, timedOut } = await this.retrieveHeadings(file, item.view);
       if (this.fileResolveMap.get(leafId) !== item || myRev !== item.resolveRevision) {
@@ -1106,6 +1113,12 @@ export default class StickyHeadingsPlugin extends Plugin {
         this.setHeadingsInView(scroller, item);
       } else {
         this.updateHeadings(file, item.view, item); // scrollerless fallback keeps the bar populated
+      }
+      // A timed-out retrieval committed raw titles; the setHeadingsInView/updateHeadings
+      // render above re-stamps the offset gate from titleMap HITS built at the fresh
+      // offsets, so explicitly re-open the gate here or the raw titles freeze behind it.
+      if (timedOut) {
+        item.lastOffsetSignature = undefined;
       }
     } catch (error) {
       if (document.body.dataset.stickyHeadingsDebug === '1') {
